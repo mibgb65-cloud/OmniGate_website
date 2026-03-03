@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: omnigate-bootstrap
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+server:
+  port: ${SERVER_PORT:8080}

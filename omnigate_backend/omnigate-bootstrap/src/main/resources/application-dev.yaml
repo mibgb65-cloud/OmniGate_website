@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/omnigate_dev
+    username: postgres
+    password: 191599
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 1
+          max-wait: 3s
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    root: info
+    com.xiabuji.omnigate: debug
+
+omnigate:
+  security:
+    jwt:
+      issuer: omnigate-dev
+      access-expire-minutes: 30
+      refresh-expire-days: 7
+      secret: dev-change-this-secret

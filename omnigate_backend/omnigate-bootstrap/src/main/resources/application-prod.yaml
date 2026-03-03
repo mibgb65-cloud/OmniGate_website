@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: ${OMNIGATE_DB_URL}
+    username: ${OMNIGATE_DB_USERNAME}
+    password: ${OMNIGATE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${OMNIGATE_REDIS_HOST}
+      port: ${OMNIGATE_REDIS_PORT:6379}
+      database: ${OMNIGATE_REDIS_DATABASE:0}
+      password: ${OMNIGATE_REDIS_PASSWORD:}
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+          max-wait: 3s
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: info
+    com.xiabuji.omnigate: info
+
+omnigate:
+  security:
+    jwt:
+      issuer: omnigate-prod
+      access-expire-minutes: ${OMNIGATE_JWT_ACCESS_EXPIRE_MINUTES:30}
+      refresh-expire-days: ${OMNIGATE_JWT_REFRESH_EXPIRE_DAYS:7}
+      secret: ${OMNIGATE_JWT_SECRET}

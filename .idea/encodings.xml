@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://C:/Windows/System32/src/main/java" charset="UTF-8" />
+    <file url="file://C:/Windows/System32/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/bootstrap-module/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/chatgpt-module/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/common-module/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/github-module/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/google-module/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-bootstrap/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-chatgpt/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-common/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-github/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-google/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/omnigate-user/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/omnigate_backend/user-module/src/main/java" charset="UTF-8" />
+  </component>
+</project>

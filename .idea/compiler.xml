@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile default="true" name="Default" enabled="true" />
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+      </profile>
+      <profile name="Annotation profile for omnigate-backend" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.42/lombok-1.18.42.jar" />
+        </processorPath>
+        <module name="omnigate-github" />
+        <module name="omnigate-google" />
+        <module name="omnigate-chatgpt" />
+        <module name="omnigate-user" />
+        <module name="omnigate-bootstrap" />
+        <module name="omnigate-common" />
+      </profile>
+    </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="bootstrap-module" target="25" />
+      <module name="chatgpt-module" target="25" />
+      <module name="common-module" target="25" />
+      <module name="github-module" target="25" />
+      <module name="google-module" target="25" />
+      <module name="OmniGate_backend" target="1.5" />
+      <module name="user-module" target="25" />
+    </bytecodeTargetLevel>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="OmniGate_backend" options="" />
+      <module name="bootstrap-module" options="-parameters" />
+      <module name="chatgpt-module" options="-parameters" />
+      <module name="common-module" options="-parameters" />
+      <module name="github-module" options="-parameters" />
+      <module name="google-module" options="-parameters" />
+      <module name="omnigate-bootstrap" options="-parameters" />
+      <module name="omnigate-chatgpt" options="-parameters" />
+      <module name="omnigate-common" options="-parameters" />
+      <module name="omnigate-github" options="-parameters" />
+      <module name="omnigate-google" options="-parameters" />
+      <module name="omnigate-user" options="-parameters" />
+      <module name="omnigate_backend" options="-parameters" />
+      <module name="user-module" options="-parameters" />
+    </option>
+  </component>
+</project>

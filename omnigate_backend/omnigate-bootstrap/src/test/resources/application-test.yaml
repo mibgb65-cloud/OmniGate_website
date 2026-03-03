@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: ${OMNIGATE_TEST_DB_URL:jdbc:postgresql://127.0.0.1:5432/omnigate_dev}
+    username: ${OMNIGATE_TEST_DB_USERNAME:postgres}
+    password: ${OMNIGATE_TEST_DB_PASSWORD:191599}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${OMNIGATE_TEST_REDIS_HOST:127.0.0.1}
+      port: ${OMNIGATE_TEST_REDIS_PORT:6379}
+      database: ${OMNIGATE_TEST_REDIS_DATABASE:0}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+omnigate:
+  security:
+    jwt:
+      issuer: omnigate-test
+      access-expire-minutes: 30
+      refresh-expire-days: 7
+      secret: test-change-this-secret
