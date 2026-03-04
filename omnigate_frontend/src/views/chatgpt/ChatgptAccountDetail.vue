@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
 
 import {
   deleteChatgptAccount,
@@ -95,6 +95,20 @@ function normalizeCell(value) {
 
 function toNullableText(value) {
   return value || '-'
+}
+
+async function handleCopyValue(value, label) {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    ElMessage.warning(`${label}为空，无法复制`)
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(`${label}已复制`)
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
 }
 
 function fillEditForm(data) {
@@ -311,9 +325,36 @@ onMounted(fetchDetail)
           <h3>元数据</h3>
         </header>
 
-        <el-descriptions :column="1" border>
+        <el-descriptions :column="1" class="detail-descriptions">
           <el-descriptions-item label="账号 ID">{{ toNullableText(detail?.id) }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱">{{ toNullableText(detail?.email) }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">
+            <div class="copyable-field">
+              <span class="copy-text">{{ toNullableText(detail?.email) }}</span>
+              <el-button
+                text
+                class="copy-btn"
+                :icon="CopyDocument"
+                :disabled="!detail?.email"
+                @click="handleCopyValue(detail?.email, '邮箱')"
+              >
+                复制
+              </el-button>
+            </div>
+          </el-descriptions-item>
+          <el-descriptions-item label="密码">
+            <div class="copyable-field">
+              <span class="copy-text">{{ toNullableText(detail?.password) }}</span>
+              <el-button
+                text
+                class="copy-btn"
+                :icon="CopyDocument"
+                :disabled="!detail?.password"
+                @click="handleCopyValue(detail?.password, '密码')"
+              >
+                复制
+              </el-button>
+            </div>
+          </el-descriptions-item>
           <el-descriptions-item label="订阅层级">{{ toNullableText(detail?.subTier) }}</el-descriptions-item>
           <el-descriptions-item label="账号状态">{{ toNullableText(detail?.accountStatus) }}</el-descriptions-item>
           <el-descriptions-item label="到期日期">{{ toNullableText(detail?.expireDate) }}</el-descriptions-item>
@@ -322,7 +363,18 @@ onMounted(fetchDetail)
         </el-descriptions>
 
         <div class="token-viewer">
-          <p>SessionToken 预览</p>
+          <div class="token-viewer-header">
+            <p>SessionToken 预览</p>
+            <el-button
+              text
+              class="copy-btn"
+              :icon="CopyDocument"
+              :disabled="!detail?.sessionToken"
+              @click="handleCopyValue(detail?.sessionToken, 'SessionToken')"
+            >
+              复制
+            </el-button>
+          </div>
           <div class="token-content">{{ toNullableText(detail?.sessionToken) }}</div>
         </div>
       </article>
@@ -431,6 +483,49 @@ onMounted(fetchDetail)
   font-size: 0.82rem;
 }
 
+:deep(.detail-descriptions .el-descriptions__table) {
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+:deep(.detail-descriptions .el-descriptions__cell) {
+  border: none !important;
+  padding: 10px 12px;
+}
+
+:deep(.detail-descriptions .el-descriptions__label.el-descriptions__cell) {
+  width: 108px;
+  color: var(--og-slate-600);
+  font-weight: 700;
+  background: #f1f5f9;
+  border-radius: 10px 0 0 10px;
+}
+
+:deep(.detail-descriptions .el-descriptions__content.el-descriptions__cell) {
+  color: var(--og-slate-900);
+  background: #f8fafc;
+  border-radius: 0 10px 10px 0;
+}
+
+.copyable-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.copy-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  padding: 0;
+}
+
 .form-footer {
   margin-top: 10px;
   display: flex;
@@ -440,6 +535,13 @@ onMounted(fetchDetail)
 
 .token-viewer {
   margin-top: 12px;
+}
+
+.token-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .token-viewer p {

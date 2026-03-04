@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, DataAnalysis, Link, Monitor, UserFilled } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Key, Link, Monitor, UserFilled } from '@element-plus/icons-vue'
 
 import { logout } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
@@ -35,18 +35,58 @@ const navItems = [
     icon: ChatDotRound,
   },
   {
+    path: '/tools/2fa',
+    title: '2FA 工具',
+    icon: Key,
+  },
+  {
     path: '/profile',
     title: '个人中心',
     icon: UserFilled,
   },
 ]
 
-const breadcrumbs = computed(() => route.matched.filter((item) => item.meta?.title))
+function getGoogleSnapshotEmail(accountId) {
+  if (!accountId) {
+    return ''
+  }
+  try {
+    const raw = sessionStorage.getItem(`og-google-account-snapshot-${accountId}`)
+    if (!raw) {
+      return ''
+    }
+    const snapshot = JSON.parse(raw)
+    return typeof snapshot?.email === 'string' ? snapshot.email.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+const breadcrumbs = computed(() => {
+  const items = route.matched
+    .filter((item) => item.meta?.title)
+    .map((item) => ({
+      path: item.path,
+      title: item.meta.title,
+    }))
+
+  if (route.path.startsWith('/google/accounts/') && route.params.id) {
+    const emailFromQuery = typeof route.query.email === 'string' ? route.query.email.trim() : ''
+    const emailFromSnapshot = getGoogleSnapshotEmail(String(route.params.id))
+    const detailLabel = emailFromQuery || emailFromSnapshot || String(route.params.id)
+    items.push({
+      path: route.fullPath,
+      title: detailLabel,
+    })
+  }
+  return items
+})
 const activeMenuPath = computed(() => {
   const currentPath = route.path
   if (currentPath.startsWith('/google/accounts')) return '/google/accounts'
   if (currentPath.startsWith('/github/accounts')) return '/github/accounts'
   if (currentPath.startsWith('/chatgpt/accounts')) return '/chatgpt/accounts'
+  if (currentPath.startsWith('/tools/2fa')) return '/tools/2fa'
   if (currentPath.startsWith('/profile')) return '/profile'
   if (currentPath.startsWith('/dashboard')) return '/dashboard'
   return currentPath
@@ -214,6 +254,21 @@ async function handleLogout() {
 
 :deep(.admin-menu .el-menu-item .el-icon) {
   font-size: 1.12rem;
+}
+
+:deep(.admin-menu.el-menu--collapse) {
+  width: 100%;
+}
+
+:deep(.admin-menu.el-menu--collapse .el-menu-item) {
+  width: calc(100% - 20px);
+  margin: 4px auto;
+  padding: 0 !important;
+  justify-content: center;
+}
+
+:deep(.admin-menu.el-menu--collapse .el-menu-item .el-icon) {
+  margin-right: 0;
 }
 
 .aside-footer {

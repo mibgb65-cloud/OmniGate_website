@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
 
 import { deleteGithubAccount, getGithubAccount } from '@/api/github'
+import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,6 +13,8 @@ const router = useRouter()
 const loading = ref(false)
 const detail = ref(null)
 const deleting = ref(false)
+const copiedField = ref('')
+let copyFeedbackTimer = null
 
 const accountId = computed(() => String(route.params.id || '').trim())
 
@@ -24,6 +27,33 @@ function resolveStatusText(status) {
 
 function toNullableText(value) {
   return value || '-'
+}
+
+function markCopied(fieldKey) {
+  copiedField.value = fieldKey
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer)
+  }
+  copyFeedbackTimer = setTimeout(() => {
+    copiedField.value = ''
+    copyFeedbackTimer = null
+  }, 900)
+}
+
+async function handleCopyValue(value, label, fieldKey) {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    ElMessage.warning(`${label}为空，无法复制`)
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(text)
+    markCopied(fieldKey)
+    ElMessage.success(`${label}已复制`)
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
 }
 
 async function fetchDetail() {
@@ -70,6 +100,13 @@ async function handleDelete() {
 }
 
 onMounted(fetchDetail)
+
+onBeforeUnmount(() => {
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer)
+    copyFeedbackTimer = null
+  }
+})
 </script>
 
 <template>
@@ -107,16 +144,50 @@ onMounted(fetchDetail)
 
     <section class="card-block">
       <header><h3>基础信息</h3></header>
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="2" class="detail-descriptions">
         <el-descriptions-item label="账号 ID">{{ toNullableText(detail?.id) }}</el-descriptions-item>
         <el-descriptions-item label="用户名">{{ toNullableText(detail?.username) }}</el-descriptions-item>
-        <el-descriptions-item label="绑定邮箱">{{ toNullableText(detail?.email) }}</el-descriptions-item>
+        <el-descriptions-item :span="2" class-name="credential-focus-content">
+          <div class="credential-focus-row">
+            <div class="credential-item credential-item--email">
+              <span class="credential-key">邮箱</span>
+              <span class="credential-value">{{ toNullableText(detail?.email) }}</span>
+              <el-button
+                text
+                class="credential-copy-btn"
+                :class="{ 'is-copied': copiedField === 'email' }"
+                :icon="copiedField === 'email' ? Check : CopyDocument"
+                :disabled="!detail?.email"
+                @click="handleCopyValue(detail?.email, '邮箱', 'email')"
+              >
+                {{ copiedField === 'email' ? '已复制' : '复制' }}
+              </el-button>
+            </div>
+            <div class="credential-item credential-item--password">
+              <span class="credential-key">密码</span>
+              <span class="credential-value">{{ toNullableText(detail?.password) }}</span>
+              <el-button
+                text
+                class="credential-copy-btn"
+                :class="{ 'is-copied': copiedField === 'password' }"
+                :icon="copiedField === 'password' ? Check : CopyDocument"
+                :disabled="!detail?.password"
+                @click="handleCopyValue(detail?.password, '密码', 'password')"
+              >
+                {{ copiedField === 'password' ? '已复制' : '复制' }}
+              </el-button>
+            </div>
+          </div>
+        </el-descriptions-item>
         <el-descriptions-item label="账号状态">{{ resolveStatusText(detail?.accountStatus) }}</el-descriptions-item>
-        <el-descriptions-item label="密码">{{ toNullableText(detail?.password) }}</el-descriptions-item>
         <el-descriptions-item label="TOTP 密钥">{{ toNullableText(detail?.totpSecret) }}</el-descriptions-item>
         <el-descriptions-item label="代理 IP">{{ toNullableText(detail?.proxyIp) }}</el-descriptions-item>
         <el-descriptions-item label="更新时间">{{ toNullableText(detail?.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
+    </section>
+
+    <section class="card-block">
+      <TotpCodeTool :secret="detail?.totpSecret" :allow-manual-input="false" />
     </section>
   </div>
 </template>
@@ -200,6 +271,120 @@ onMounted(fetchDetail)
   font-size: 1rem;
 }
 
+:deep(.detail-descriptions .el-descriptions__table) {
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+:deep(.detail-descriptions .el-descriptions__cell) {
+  border: none !important;
+  padding: 10px 12px;
+}
+
+:deep(.detail-descriptions .el-descriptions__label.el-descriptions__cell) {
+  width: 110px;
+  color: var(--og-slate-600);
+  font-weight: 700;
+  background: #f1f5f9;
+  border-radius: 10px 0 0 10px;
+}
+
+:deep(.detail-descriptions .el-descriptions__content.el-descriptions__cell) {
+  color: var(--og-slate-900);
+  background: #f8fafc;
+  border-radius: 0 10px 10px 0;
+}
+
+:deep(.detail-descriptions .credential-focus-content.el-descriptions__content.el-descriptions__cell) {
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.credential-focus-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.credential-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+}
+
+.credential-item--email {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.26);
+}
+
+.credential-item--password {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.credential-key {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.credential-item--email .credential-key {
+  color: #1d4ed8;
+}
+
+.credential-item--password .credential-key {
+  color: #b45309;
+}
+
+.credential-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--og-slate-900);
+}
+
+.credential-copy-btn {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--og-slate-600);
+  background: rgba(148, 163, 184, 0.12);
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.credential-copy-btn:hover {
+  color: #0f172a;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.credential-copy-btn:active {
+  transform: scale(0.92);
+}
+
+.credential-copy-btn.is-copied {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 6px 14px rgba(16, 185, 129, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .credential-copy-btn {
+    transition: none !important;
+  }
+}
+
 @media (max-width: 980px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -214,6 +399,15 @@ onMounted(fetchDetail)
 @media (max-width: 640px) {
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .credential-focus-row {
+    gap: 8px;
+  }
+
+  .credential-item {
+    gap: 6px;
+    padding: 8px;
   }
 
   .hero-actions {

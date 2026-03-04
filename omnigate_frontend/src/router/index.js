@@ -62,6 +62,12 @@ const routes = [
         meta: { requiresAuth: true, title: 'ChatGPT 账号详情' },
       },
       {
+        path: '/tools/2fa',
+        name: 'two-factor-tool',
+        component: () => import('@/views/tools/TwoFactorToolView.vue'),
+        meta: { requiresAuth: true, title: '2FA 工具' },
+      },
+      {
         path: '/profile',
         name: 'profile',
         component: () => import('@/views/profile/ProfileView.vue'),

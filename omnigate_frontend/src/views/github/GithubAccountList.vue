@@ -12,7 +12,9 @@ const router = useRouter()
 const importDialogVisible = ref(false)
 const importing = ref(false)
 const importRawText = ref('')
+const importMode = ref('text')
 const deletingId = ref(null)
+const importForm = reactive(createGithubImportForm())
 
 const filterForm = reactive({
   username: '',
@@ -62,6 +64,21 @@ function normalizeCell(value) {
   return nextValue || undefined
 }
 
+function createGithubImportForm() {
+  return {
+    username: '',
+    email: '',
+    password: '',
+    totpSecret: '',
+    proxyIp: '',
+    accountStatus: '',
+  }
+}
+
+function resetGithubImportForm() {
+  Object.assign(importForm, createGithubImportForm())
+}
+
 function parseGithubImportText(rawText) {
   const lines = rawText
     .split(/\r?\n/)
@@ -96,6 +113,26 @@ function parseGithubImportText(rawText) {
       accountStatus: normalizedStatus,
     }
   })
+}
+
+function parseGithubImportForm(form) {
+  const payload = {
+    username: normalizeCell(form.username),
+    email: normalizeCell(form.email),
+    password: normalizeCell(form.password),
+    totpSecret: normalizeCell(form.totpSecret),
+    proxyIp: normalizeCell(form.proxyIp),
+    accountStatus: normalizeCell(form.accountStatus),
+  }
+
+  if (!payload.username || !payload.email || !payload.password || !payload.totpSecret) {
+    throw new Error('表单模式必填：username、email、password、totpSecret')
+  }
+  if (payload.accountStatus && !['active', 'locked', 'banned'].includes(payload.accountStatus)) {
+    throw new Error('账号状态仅支持 active/locked/banned')
+  }
+
+  return payload
 }
 
 async function fetchGithubAccounts() {
@@ -169,14 +206,17 @@ async function handleDelete(row) {
 }
 
 async function handleImportSubmit() {
-  if (!importRawText.value.trim()) {
-    ElMessage.warning('请先粘贴待导入数据')
-    return
-  }
-
   let payload = []
   try {
-    payload = parseGithubImportText(importRawText.value)
+    if (importMode.value === 'text') {
+      if (!importRawText.value.trim()) {
+        ElMessage.warning('请先粘贴待导入数据')
+        return
+      }
+      payload = parseGithubImportText(importRawText.value)
+    } else {
+      payload = [parseGithubImportForm(importForm)]
+    }
   } catch (error) {
     ElMessage.error(error.message || '导入数据格式不正确')
     return
@@ -187,12 +227,25 @@ async function handleImportSubmit() {
     const successCount = await importGithubAccounts(payload)
     ElMessage.success(`导入完成，成功 ${successCount ?? payload.length} 条`)
     importDialogVisible.value = false
-    importRawText.value = ''
     pager.current = 1
     await fetchGithubAccounts()
   } finally {
     importing.value = false
   }
+}
+
+function handleImportDialogClosed() {
+  importMode.value = 'text'
+  importRawText.value = ''
+  resetGithubImportForm()
+}
+
+function handleImportClear() {
+  if (importMode.value === 'text') {
+    importRawText.value = ''
+    return
+  }
+  resetGithubImportForm()
 }
 
 onMounted(fetchGithubAccounts)
@@ -296,28 +349,77 @@ onMounted(fetchGithubAccounts)
       </div>
     </el-card>
 
-    <el-dialog v-model="importDialogVisible" title="导入 GitHub 账号" width="760px" destroy-on-close>
+    <el-dialog
+      v-model="importDialogVisible"
+      title="导入 GitHub 账号"
+      width="980px"
+      destroy-on-close
+      @closed="handleImportDialogClosed"
+    >
       <div class="import-box">
-        <el-alert type="info" show-icon :closable="false">
-          <template #title>
-            每行 1 条，支持 `---- / 逗号 / 竖线 / Tab` 分隔。格式：`username,email,password,totpSecret,proxyIp,accountStatus`。
-            其中 `accountStatus` 仅支持 `active/locked/banned`，可留空。
-          </template>
-        </el-alert>
+        <div class="import-mode-switch">
+          <div class="import-mode-toggle" :class="{ 'is-table': importMode === 'table' }" role="group" aria-label="导入模式切换">
+            <span class="mode-indicator" :class="{ 'is-table': importMode === 'table' }"></span>
+            <button type="button" class="mode-button" :class="{ active: importMode === 'text' }" @click="importMode = 'text'">
+              文本粘贴
+            </button>
+            <button type="button" class="mode-button" :class="{ active: importMode === 'table' }" @click="importMode = 'table'">
+              表单填写
+            </button>
+          </div>
+        </div>
 
-        <el-input
-          v-model="importRawText"
-          type="textarea"
-          :rows="10"
-          class="import-input"
-          placeholder="octocat,octo@example.com,Pass@123,JBSWY3DPEHPK3PXP,127.0.0.1:1080,active"
-        />
+        <template v-if="importMode === 'text'">
+          <el-alert type="info" show-icon :closable="false">
+            <template #title>
+              每行 1 条，支持 `---- / 逗号 / 竖线 / Tab` 分隔。格式：`username,email,password,totpSecret,proxyIp,accountStatus`。
+              其中 `accountStatus` 仅支持 `active/locked/banned`，可留空。
+            </template>
+          </el-alert>
+
+          <el-input
+            v-model="importRawText"
+            type="textarea"
+            :rows="10"
+            class="import-input"
+            placeholder="octocat,octo@example.com,Pass@123,JBSWY3DPEHPK3PXP,127.0.0.1:1080,active"
+          />
+        </template>
+
+        <template v-else>
+          <el-alert type="info" show-icon :closable="false">
+            <template #title>表单填写仅支持单账号上传，必填项：用户名、邮箱、密码、TOTP 密钥。</template>
+          </el-alert>
+
+          <el-form :model="importForm" label-position="top" class="import-form" @submit.prevent>
+            <el-form-item label="用户名*">
+              <el-input v-model="importForm.username" placeholder="octocat" />
+            </el-form-item>
+            <el-form-item label="邮箱*">
+              <el-input v-model="importForm.email" placeholder="name@example.com" />
+            </el-form-item>
+            <el-form-item label="密码*">
+              <el-input v-model="importForm.password" placeholder="登录密码" />
+            </el-form-item>
+            <el-form-item label="TOTP 密钥*">
+              <el-input v-model="importForm.totpSecret" placeholder="Base32 密钥" />
+            </el-form-item>
+            <el-form-item label="代理 IP">
+              <el-input v-model="importForm.proxyIp" placeholder="可选" />
+            </el-form-item>
+            <el-form-item label="账号状态">
+              <el-select v-model="importForm.accountStatus" clearable placeholder="可选">
+                <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </template>
       </div>
 
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="importDialogVisible = false">取消</el-button>
-          <el-button @click="importRawText = ''">清空</el-button>
+          <el-button @click="handleImportClear">清空</el-button>
           <el-button type="primary" :loading="importing" @click="handleImportSubmit">开始导入</el-button>
         </div>
       </template>
@@ -451,8 +553,131 @@ onMounted(fetchGithubAccounts)
   gap: 12px;
 }
 
+.import-mode-switch {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.import-mode-toggle {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 320px);
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.68), rgba(239, 246, 255, 0.92));
+  background-size: 200% 100%;
+  background-position: 0 0;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12) inset;
+  transition:
+    background-position 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms ease;
+  overflow: hidden;
+}
+
+.import-mode-toggle.is-table {
+  background-position: 100% 0;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.16) inset;
+}
+
+.mode-indicator {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: 42px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow:
+    0 10px 20px rgba(59, 130, 246, 0.12),
+    0 0 0 1px rgba(59, 130, 246, 0.16) inset;
+  will-change: transform;
+  transition:
+    transform 380ms cubic-bezier(0.2, 1.35, 0.32, 1),
+    box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 260ms ease;
+}
+
+.mode-indicator.is-table {
+  transform: translateX(100%);
+  filter: saturate(1.06);
+  box-shadow:
+    0 12px 24px rgba(59, 130, 246, 0.16),
+    0 0 0 1px rgba(59, 130, 246, 0.2) inset;
+}
+
+.mode-button {
+  position: relative;
+  z-index: 1;
+  height: 42px;
+  border: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--og-slate-600);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.mode-button:hover {
+  color: #1d4ed8;
+}
+
+.mode-button.active {
+  color: #1e40af;
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.14);
+}
+
+.mode-button:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.4);
+  outline-offset: 2px;
+}
+
+.mode-button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-mode-toggle,
+  .mode-indicator,
+  .mode-button {
+    transition: none !important;
+  }
+}
+
 .import-input {
   margin-top: 4px;
+}
+
+.import-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.import-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.import-form :deep(.el-form-item__label) {
+  font-weight: 700;
+  color: var(--og-slate-700);
+}
+
+.import-form :deep(.el-input__wrapper),
+.import-form :deep(.el-select__wrapper) {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2) inset;
 }
 
 .dialog-footer {
@@ -484,8 +709,16 @@ onMounted(fetchGithubAccounts)
     grid-template-columns: 1fr;
   }
 
+  .import-mode-toggle {
+    width: 100%;
+  }
+
   .pagination-wrap {
     justify-content: center;
+  }
+
+  .import-form {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -6,6 +6,7 @@ import { Calendar, Collection, Cpu, Monitor, Plus, Right, User, UserFilled } fro
 
 import { pageGoogleAccounts } from '@/api/google'
 import { pageGithubAccounts } from '@/api/github'
+import { pageChatgptAccounts } from '@/api/chatgpt'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -65,9 +66,9 @@ const stats = ref([
     tone: 'sage',
   },
   {
-    label: '活跃车队数',
-    value: '42',
-    trend: '估算指标',
+    label: 'ChatGPT 账号池',
+    value: '168',
+    trend: '接口同步中',
     icon: Cpu,
     tone: 'amber',
   },
@@ -126,15 +127,16 @@ function formatNumber(value) {
 async function fetchOverviewStats() {
   loadingStats.value = true
   try {
-    const [googleData, githubData] = await Promise.all([
+    const [googleData, githubData, chatgptData] = await Promise.all([
       pageGoogleAccounts({ current: 1, size: 1 }),
       pageGithubAccounts({ current: 1, size: 1 }),
+      pageChatgptAccounts({ current: 1, size: 1 }),
     ])
 
     const googleTotal = Number(googleData?.total || 0)
     const githubTotal = Number(githubData?.total || 0)
-    const mergedTotal = googleTotal + githubTotal
-    const activeFleetEstimate = Math.max(12, Math.round(googleTotal * 0.05 + githubTotal * 0.03))
+    const chatgptTotal = Number(chatgptData?.total || 0)
+    const mergedTotal = googleTotal + githubTotal + chatgptTotal
 
     stats.value = [
       {
@@ -159,9 +161,9 @@ async function fetchOverviewStats() {
         tone: 'sage',
       },
       {
-        label: '活跃车队数',
-        value: formatNumber(activeFleetEstimate),
-        trend: '按账号活跃度估算',
+        label: 'ChatGPT 账号池',
+        value: formatNumber(chatgptTotal),
+        trend: '实时同步',
         icon: Cpu,
         tone: 'amber',
       },
@@ -175,7 +177,7 @@ async function fetchOverviewStats() {
     activities.value = [
       {
         time: lastSyncTime.value,
-        content: `已完成首页概览数据刷新，Google ${formatNumber(googleTotal)} / GitHub ${formatNumber(githubTotal)}。`,
+        content: `已完成首页概览数据刷新，Google ${formatNumber(googleTotal)} / GitHub ${formatNumber(githubTotal)} / ChatGPT ${formatNumber(chatgptTotal)}。`,
       },
       ...activities.value.slice(0, 3),
     ]

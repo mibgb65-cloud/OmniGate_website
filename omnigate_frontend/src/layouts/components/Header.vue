@@ -71,8 +71,8 @@ async function handleUserCommand(command) {
 
       <el-breadcrumb :separator-icon="ArrowRight" class="breadcrumb">
         <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
-        <el-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-          {{ item.meta.title }}
+        <el-breadcrumb-item v-for="(item, index) in breadcrumbs" :key="`${item.path}-${index}`">
+          {{ item.title }}
         </el-breadcrumb-item>
       </el-breadcrumb>
     </div>

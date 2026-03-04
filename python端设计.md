@@ -435,3 +435,55 @@ project/
 
 系统具备**良好的稳定性**、**清晰的架构边界**以及**可扩展的分布式能力**，非常适用于构建浏览器自动化任务执行平台。
 
+```Plaintext
+omnigate_worker/
+├── src/
+│   ├── main.py                     # Worker 启动入口
+│   ├── config.py                   # 全局配置
+│   │
+│   ├── core/                       # 核心基础设施 (全局共享)
+│   │   ├── worker_node.py          # 核心并发调度与任务路由分发
+│   │   ├── heartbeat.py            
+│   │   └── state_manager.py        
+│   │
+│   ├── db/                         # 数据库交互 (全局共享)
+│   ├── redis_io/                   # Redis 通信 (全局共享)
+│   ├── utils/                      # 通用工具类 (日志、异常等)
+│   │
+│   ├── browser/                    # 浏览器底层控制 (全局共享)
+│   │   ├── __init__.py
+│   │   ├── browser_manager.py      # nodriver 实例池、代理配置、指纹伪装
+│   │   └── interceptor.py          # 全局请求拦截器 (如果需要拦截特定请求)
+│   │
+│   └── modules/                    # ★ 业务模块层 (按目标平台严格隔离) ★
+│       ├── __init__.py
+│       ├── base_task.py            # 所有业务任务的抽象基类 (定义统一的 run() 接口)
+│       │
+│       ├── github/                 # GitHub 自动化模块
+│       │   ├── __init__.py
+│       │   ├── auth.py             # GitHub 专属：处理登录、2FA、Cookie 保持
+│       │   ├── helpers.py          # GitHub 专属：解析仓库DOM、处理特定弹窗
+│       │   └── tasks/              # GitHub 具体的任务入口
+│       │       ├── clone_repo.py
+│       │       └── star_project.py
+│       │
+│       ├── google/                 # Google 自动化模块
+│       │   ├── __init__.py
+│       │   ├── auth.py             # Google 专属：绕过人机验证、多账号切换
+│       │   ├── helpers.py          # Google 专属：解析搜索结果页
+│       │   └── tasks/
+│       │       ├── search_keyword.py
+│       │       └── scrape_maps.py
+│       │
+│       └── chatgpt/                # ChatGPT 自动化模块
+│           ├── __init__.py
+│           ├── auth.py             # ChatGPT 专属：Cloudflare 绕过、Token 刷新
+│           ├── helpers.py          # ChatGPT 专属：等待流式响应输出完成、提取 Markdown
+│           └── tasks/
+│               ├── generate_text.py
+│               └── create_session.py
+│
+├── requirements.txt
+└── Dockerfile
+```
+
