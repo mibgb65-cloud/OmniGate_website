@@ -20,7 +20,7 @@ public class GoogleAccountBase extends BaseEntity {
     /**
      * 主键 ID。
      */
-    @TableId(type = IdType.ASSIGN_ID)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     /**

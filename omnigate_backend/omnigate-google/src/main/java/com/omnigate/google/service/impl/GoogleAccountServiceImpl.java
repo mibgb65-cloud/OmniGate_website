@@ -67,21 +67,16 @@ public class GoogleAccountServiceImpl extends ServiceImpl<GoogleAccountBaseMappe
         assertEmailsNotExists(emails);
 
         List<GoogleAccountBase> baseList = importDTOList.stream().map(this::toAccountBaseEntity).toList();
-        boolean saved = saveBatch(baseList);
-        if (!saved) {
-            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "账号导入失败");
-        }
-
+        int successCount = 0;
         for (GoogleAccountBase accountBase : baseList) {
-            GoogleAccountStatus status = new GoogleAccountStatus();
-            status.setAccountId(accountBase.getId());
-            status.setSubTier(DEFAULT_SUB_TIER);
-            status.setFamilyStatus(0);
-            status.setInviteLinkStatus(0);
-            status.setInvitedCount(0);
-            googleAccountStatusMapper.insert(status);
+            boolean saved = save(accountBase);
+            if (!saved || accountBase.getId() == null) {
+                throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "账号导入失败");
+            }
+            initDefaultAccountData(accountBase);
+            successCount++;
         }
-        return baseList.size();
+        return successCount;
     }
 
     /**
@@ -184,6 +179,27 @@ public class GoogleAccountServiceImpl extends ServiceImpl<GoogleAccountBaseMappe
     }
 
     /**
+     * 逻辑删除账号及其关联数据。
+     *
+     * @param id 账号 ID
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteAccount(Long id) {
+        getRequiredAccount(id);
+
+        googleFamilyMemberMapper.delete(Wrappers.lambdaQuery(GoogleFamilyMember.class)
+                .eq(GoogleFamilyMember::getAccountId, id));
+        googleInviteLinkMapper.delete(Wrappers.lambdaQuery(GoogleInviteLink.class)
+                .eq(GoogleInviteLink::getAccountId, id));
+        googleAccountStatusMapper.deleteById(id);
+
+        if (!removeById(id)) {
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "删除账号失败");
+        }
+    }
+
+    /**
      * 查询账号下的家庭成员列表。
      *
      * @param accountId 账号 ID
@@ -211,6 +227,25 @@ public class GoogleAccountServiceImpl extends ServiceImpl<GoogleAccountBaseMappe
                 .eq(GoogleInviteLink::getAccountId, accountId)
                 .orderByDesc(GoogleInviteLink::getCreatedAt);
         return googleInviteLinkMapper.selectList(queryWrapper).stream().map(this::toInviteLinkVO).toList();
+    }
+
+    /**
+     * 为新导入账号创建默认状态数据（无订阅、无家庭组、无邀请链接）。
+     *
+     * @param accountBase 新导入账号
+     */
+    private void initDefaultAccountData(GoogleAccountBase accountBase) {
+        Long accountId = accountBase.getId();
+
+        GoogleAccountStatus status = new GoogleAccountStatus();
+        status.setAccountId(accountId);
+        status.setSubTier(DEFAULT_SUB_TIER);
+        status.setFamilyStatus(0);
+        status.setExpireDate(null);
+        status.setInviteLinkStatus(0);
+        status.setStudentLink(null);
+        status.setInvitedCount(0);
+        googleAccountStatusMapper.insert(status);
     }
 
     /**

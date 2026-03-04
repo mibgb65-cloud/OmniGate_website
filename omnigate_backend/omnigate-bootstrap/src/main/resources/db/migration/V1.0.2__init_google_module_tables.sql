@@ -3,7 +3,7 @@
 -- Google 账号基础信息表
 CREATE TABLE IF NOT EXISTS acc_google_base
 (
-    id             BIGINT PRIMARY KEY,
+    id             BIGSERIAL PRIMARY KEY,
     email          VARCHAR(128) NOT NULL,
     password       VARCHAR(255) NOT NULL,
     recovery_email VARCHAR(128),
@@ -76,7 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_acc_google_status_deleted ON acc_google_status (d
 -- Google 家庭组成员表
 CREATE TABLE IF NOT EXISTS acc_google_family_member
 (
-    id           BIGINT PRIMARY KEY,
+    id           BIGSERIAL PRIMARY KEY,
     account_id   BIGINT       NOT NULL,
     member_name  VARCHAR(128) NOT NULL,
     member_email VARCHAR(128) NOT NULL,
@@ -111,7 +111,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_acc_google_family_member_acc_email_deleted
 -- Google 邀请链接表（4个月免费链接）
 CREATE TABLE IF NOT EXISTS acc_google_invite_link
 (
-    id         BIGINT PRIMARY KEY,
+    id         BIGSERIAL PRIMARY KEY,
     account_id BIGINT        NOT NULL,
     invite_url VARCHAR(1024) NOT NULL,
     used_count SMALLINT      NOT NULL DEFAULT 0,

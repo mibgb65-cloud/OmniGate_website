@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.DeleteMapping;
 
 import java.util.List;
 
@@ -103,5 +104,17 @@ public class GoogleAccountController {
     @GetMapping("/{id}/invite-links")
     public Result<List<GoogleInviteLinkVO>> listInviteLinks(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
         return Result.success(googleAccountService.listInviteLinks(id));
+    }
+
+    /**
+     * 逻辑删除账号及其关联信息。
+     *
+     * @param id 账号 ID
+     * @return 成功响应
+     */
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteAccount(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
+        googleAccountService.deleteAccount(id);
+        return Result.success();
     }
 }

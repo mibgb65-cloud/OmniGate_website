@@ -3,7 +3,7 @@
 -- ChatGPT 账号基础信息表
 CREATE TABLE IF NOT EXISTS acc_chatgpt_base
 (
-    id             BIGINT PRIMARY KEY,
+    id             BIGSERIAL PRIMARY KEY,
     email          VARCHAR(128) NOT NULL,
     password       VARCHAR(255),
     session_token  VARCHAR(1024),
@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_acc_chatgpt_base_deleted ON acc_chatgpt_base (del
 -- ChatGPT Team 车队表
 CREATE TABLE IF NOT EXISTS acc_chatgpt_team
 (
-    id          BIGINT PRIMARY KEY,
+    id          BIGSERIAL PRIMARY KEY,
     team_name   VARCHAR(128) NOT NULL,
     owner_id    BIGINT       NOT NULL,
     max_members SMALLINT     NOT NULL DEFAULT 5,
@@ -70,7 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_acc_chatgpt_team_deleted ON acc_chatgpt_team (del
 -- ChatGPT Team 成员关联表
 CREATE TABLE IF NOT EXISTS acc_chatgpt_team_member
 (
-    id          BIGINT PRIMARY KEY,
+    id          BIGSERIAL PRIMARY KEY,
     team_id     BIGINT      NOT NULL,
     member_id   BIGINT      NOT NULL,
     member_role VARCHAR(32) NOT NULL,

@@ -1,35 +1,54 @@
 @import './base.css';
 
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
+  min-height: 100vh;
 }
 
-a,
-.green {
+a {
+  color: inherit;
   text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
 }
 
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
+.el-card {
+  border: 1px solid var(--og-border);
+  border-radius: 16px;
+  box-shadow: var(--og-shadow-md);
+  transition: all 0.3s ease;
 }
 
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
+.el-table {
+  --el-table-border-color: rgba(27, 40, 54, 0.1);
+  --el-table-header-bg-color: rgba(242, 247, 245, 0.9);
+  --el-table-row-hover-bg-color: rgba(18, 161, 115, 0.07);
+}
 
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
+.el-form-item {
+  margin-bottom: 18px;
+}
+
+.el-button,
+.el-menu-item,
+.el-dropdown-menu__item,
+.el-pagination button,
+.el-tag {
+  transition: all 0.3s ease;
+}
+
+.el-table__row,
+.el-table__cell {
+  transition: all 0.3s ease;
+}
+
+.el-table .el-table__row:hover > td {
+  background-color: rgba(18, 161, 115, 0.06) !important;
+}
+
+.el-card:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  box-shadow: 0 0 0 1px rgba(27, 40, 54, 0.12) inset;
 }

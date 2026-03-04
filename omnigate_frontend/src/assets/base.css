@@ -1,86 +1,57 @@
-/* color palette from <https://github.com/vuejs/theme> */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 :root {
-  --vt-c-white: #ffffff;
-  --vt-c-white-soft: #f8f8f8;
-  --vt-c-white-mute: #f2f2f2;
+  --og-slate-950: #12181d;
+  --og-slate-900: #172028;
+  --og-slate-800: #2a3643;
+  --og-slate-700: #42515d;
+  --og-slate-600: #5a6875;
+  --og-slate-500: #6f7b87;
+  --og-slate-200: #dbe3e9;
+  --og-slate-100: #edf3f4;
+  --og-surface: #ffffff;
+  --og-surface-solid: #f6f9f8;
+  --og-emerald-500: #12a173;
+  --og-emerald-600: #0f8d65;
+  --og-emerald-700: #0c7553;
+  --og-border: rgba(36, 52, 65, 0.16);
+  --og-shadow-lg: 0 22px 60px rgba(16, 30, 42, 0.14);
+  --og-shadow-md: 0 12px 34px rgba(18, 33, 46, 0.1);
 
-  --vt-c-black: #181818;
-  --vt-c-black-soft: #222222;
-  --vt-c-black-mute: #282828;
-
-  --vt-c-indigo: #2c3e50;
-
-  --vt-c-divider-light-1: rgba(60, 60, 60, 0.29);
-  --vt-c-divider-light-2: rgba(60, 60, 60, 0.12);
-  --vt-c-divider-dark-1: rgba(84, 84, 84, 0.65);
-  --vt-c-divider-dark-2: rgba(84, 84, 84, 0.48);
-
-  --vt-c-text-light-1: var(--vt-c-indigo);
-  --vt-c-text-light-2: rgba(60, 60, 60, 0.66);
-  --vt-c-text-dark-1: var(--vt-c-white);
-  --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
-}
-
-/* semantic color variables for this project */
-:root {
-  --color-background: var(--vt-c-white);
-  --color-background-soft: var(--vt-c-white-soft);
-  --color-background-mute: var(--vt-c-white-mute);
-
-  --color-border: var(--vt-c-divider-light-2);
-  --color-border-hover: var(--vt-c-divider-light-1);
-
-  --color-heading: var(--vt-c-text-light-1);
-  --color-text: var(--vt-c-text-light-1);
-
-  --section-gap: 160px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: var(--vt-c-black);
-    --color-background-soft: var(--vt-c-black-soft);
-    --color-background-mute: var(--vt-c-black-mute);
-
-    --color-border: var(--vt-c-divider-dark-2);
-    --color-border-hover: var(--vt-c-divider-dark-1);
-
-    --color-heading: var(--vt-c-text-dark-1);
-    --color-text: var(--vt-c-text-dark-2);
-  }
+  --el-color-primary: var(--og-emerald-500);
+  --el-color-primary-light-3: #46bb96;
+  --el-color-primary-light-5: #73cbaf;
+  --el-color-primary-light-7: #b4e4d2;
+  --el-color-primary-light-8: #ceede1;
+  --el-color-primary-light-9: #e8f8f1;
+  --el-color-primary-dark-2: var(--og-emerald-700);
+  --el-font-family: 'Manrope', 'Segoe UI', sans-serif;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 999px;
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
-  margin: 0;
-  font-weight: normal;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
 }
 
 body {
-  min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-background);
-  transition:
-    color 0.5s,
-    background-color 0.5s;
-  line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
-  font-size: 15px;
-  text-rendering: optimizeLegibility;
+  margin: 0;
+  color: var(--og-slate-900);
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  text-rendering: optimizelegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(18, 161, 115, 0.08), transparent 28%),
+    radial-gradient(circle at 96% 0%, rgba(23, 32, 40, 0.08), transparent 34%),
+    #f4f6f8;
 }

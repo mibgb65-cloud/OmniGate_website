@@ -65,4 +65,11 @@ public interface GoogleAccountService extends IService<GoogleAccountBase> {
      * @return 邀请链接列表
      */
     List<GoogleInviteLinkVO> listInviteLinks(Long accountId);
+
+    /**
+     * 逻辑删除账号及其关联数据。
+     *
+     * @param id 账号 ID
+     */
+    void deleteAccount(Long id);
 }

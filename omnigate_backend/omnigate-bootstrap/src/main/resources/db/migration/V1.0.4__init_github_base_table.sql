@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS acc_github_base
 (
-    id             BIGINT PRIMARY KEY,
+    id             BIGSERIAL PRIMARY KEY,
     username       VARCHAR(128) NOT NULL,
     email          VARCHAR(128) NOT NULL,
     password       VARCHAR(255) NOT NULL,
