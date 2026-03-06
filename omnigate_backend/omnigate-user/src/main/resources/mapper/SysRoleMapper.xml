@@ -26,4 +26,22 @@
           AND r.status = 1
     </select>
 
+    <!-- 按用户 ID 列表批量查询有效角色信息 -->
+    <select id="selectByUserIds" resultType="com.omnigate.user.model.vo.UserRoleBriefVO">
+        SELECT ur.user_id AS userId,
+               r.id AS roleId,
+               r.role_code AS roleCode,
+               r.role_name AS roleName
+        FROM sys_role r
+                 INNER JOIN sys_user_role ur ON ur.role_id = r.id
+        WHERE ur.user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+          AND ur.deleted = 0
+          AND r.deleted = 0
+          AND r.status = 1
+        ORDER BY ur.user_id ASC, r.sort ASC, r.id ASC
+    </select>
+
 </mapper>

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.omnigate.user.entity.SysUser;
 import com.omnigate.user.model.dto.UserCreateDTO;
 import com.omnigate.user.model.dto.UserPageQueryDTO;
+import com.omnigate.user.model.dto.UserPasswordUpdateDTO;
 import com.omnigate.user.model.dto.UserRoleAssignDTO;
 import com.omnigate.user.model.dto.UserUpdateDTO;
 import com.omnigate.user.model.vo.UserInfoVO;
@@ -46,6 +47,14 @@ public interface SysUserService extends IService<SysUser> {
      * @return 更新后的用户信息
      */
     UserInfoVO updateUser(Long userId, UserUpdateDTO updateDTO);
+
+    /**
+     * 修改用户密码。
+     *
+     * @param userId 用户 ID
+     * @param updateDTO 密码更新参数
+     */
+    void updatePassword(Long userId, UserPasswordUpdateDTO updateDTO);
 
     /**
      * 更新用户状态。

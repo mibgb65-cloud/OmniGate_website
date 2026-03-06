@@ -74,4 +74,9 @@ public class UserInfoVO {
      * 角色编码列表（详情接口可用）。
      */
     private List<String> roleCodes;
+
+    /**
+     * 角色名称列表（列表与详情接口可用）。
+     */
+    private List<String> roleNames;
 }

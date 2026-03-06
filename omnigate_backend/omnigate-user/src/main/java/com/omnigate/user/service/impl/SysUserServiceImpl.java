@@ -14,9 +14,11 @@ import com.omnigate.user.mapper.SysUserMapper;
 import com.omnigate.user.mapper.SysUserRoleMapper;
 import com.omnigate.user.model.dto.UserCreateDTO;
 import com.omnigate.user.model.dto.UserPageQueryDTO;
+import com.omnigate.user.model.dto.UserPasswordUpdateDTO;
 import com.omnigate.user.model.dto.UserRoleAssignDTO;
 import com.omnigate.user.model.dto.UserUpdateDTO;
 import com.omnigate.user.model.vo.UserInfoVO;
+import com.omnigate.user.model.vo.UserRoleBriefVO;
 import com.omnigate.user.service.SysUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,7 +28,9 @@ import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 系统用户管理服务实现。
@@ -50,8 +54,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         String usernameKeyword = normalizeText(queryDTO.getUsername());
         LambdaQueryWrapper<SysUser> countWrapper = Wrappers.lambdaQuery(SysUser.class)
                 .like(StringUtils.hasText(usernameKeyword), SysUser::getUsername, usernameKeyword)
-                .eq(queryDTO.getStatus() != null, SysUser::getStatus, queryDTO.getStatus())
-                .orderByDesc(SysUser::getCreatedAt);
+                .eq(queryDTO.getStatus() != null, SysUser::getStatus, queryDTO.getStatus());
         long total = baseMapper.selectCount(countWrapper);
 
         long current = queryDTO.getCurrent();
@@ -66,7 +69,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         List<SysUser> users = baseMapper.selectList(listWrapper);
 
         Page<UserInfoVO> result = new Page<>(current, size, total);
-        result.setRecords(users.stream().map(this::toUserInfoVO).toList());
+        List<UserInfoVO> records = users.stream().map(this::toUserInfoVO).toList();
+        fillRoleInfo(records);
+        result.setRecords(records);
         return result;
     }
 
@@ -140,6 +145,28 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "更新用户失败");
         }
         return getUserInfo(userId);
+    }
+
+    /**
+     * 单独更新用户密码，避免基础信息更新接口携带密码字段。
+     *
+     * @param userId 用户 ID
+     * @param updateDTO 密码更新参数
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updatePassword(Long userId, UserPasswordUpdateDTO updateDTO) {
+        SysUser sysUser = getRequiredUser(userId);
+        String password = normalizeText(updateDTO.getPassword());
+        if (!StringUtils.hasText(password)) {
+            throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "密码不能为空");
+        }
+
+        sysUser.setPasswordHash(passwordEncoder.encode(password));
+        boolean updated = updateById(sysUser);
+        if (!updated) {
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "更新用户密码失败");
+        }
     }
 
     /**
@@ -280,6 +307,37 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         List<SysRole> roles = sysRoleMapper.selectByUserId(userId);
         userInfoVO.setRoleIds(roles.stream().map(SysRole::getId).toList());
         userInfoVO.setRoleCodes(roles.stream().map(SysRole::getRoleCode).toList());
+        userInfoVO.setRoleNames(roles.stream().map(SysRole::getRoleName).toList());
+    }
+
+    /**
+     * 为用户分页结果批量填充角色信息，避免列表页逐条查询。
+     *
+     * @param userInfoList 用户视图对象列表
+     */
+    private void fillRoleInfo(List<UserInfoVO> userInfoList) {
+        if (userInfoList == null || userInfoList.isEmpty()) {
+            return;
+        }
+
+        List<Long> userIds = userInfoList.stream()
+                .map(UserInfoVO::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (userIds.isEmpty()) {
+            return;
+        }
+
+        Map<Long, List<UserRoleBriefVO>> groupedRoleMap = sysRoleMapper.selectByUserIds(userIds)
+                .stream()
+                .collect(Collectors.groupingBy(UserRoleBriefVO::getUserId));
+
+        for (UserInfoVO userInfoVO : userInfoList) {
+            List<UserRoleBriefVO> roles = groupedRoleMap.getOrDefault(userInfoVO.getId(), List.of());
+            userInfoVO.setRoleIds(roles.stream().map(UserRoleBriefVO::getRoleId).toList());
+            userInfoVO.setRoleCodes(roles.stream().map(UserRoleBriefVO::getRoleCode).toList());
+            userInfoVO.setRoleNames(roles.stream().map(UserRoleBriefVO::getRoleName).toList());
+        }
     }
 
     /**

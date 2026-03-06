@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, DataAnalysis, Key, Link, Monitor, UserFilled } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Key, Link, Monitor, User, UserFilled } from '@element-plus/icons-vue'
 
 import { logout } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
@@ -44,6 +44,11 @@ const navItems = [
     title: '个人中心',
     icon: UserFilled,
   },
+  {
+    path: '/users',
+    title: '用户管理',
+    icon: User,
+  },
 ]
 
 function getGoogleSnapshotEmail(accountId) {
@@ -83,6 +88,7 @@ const breadcrumbs = computed(() => {
 })
 const activeMenuPath = computed(() => {
   const currentPath = route.path
+  if (currentPath.startsWith('/users')) return '/users'
   if (currentPath.startsWith('/google/accounts')) return '/google/accounts'
   if (currentPath.startsWith('/github/accounts')) return '/github/accounts'
   if (currentPath.startsWith('/chatgpt/accounts')) return '/chatgpt/accounts'

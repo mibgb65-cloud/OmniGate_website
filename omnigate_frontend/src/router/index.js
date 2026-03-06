@@ -26,6 +26,12 @@ const routes = [
         meta: { requiresAuth: true, title: '控制台概览' },
       },
       {
+        path: '/users',
+        name: 'users',
+        component: () => import('@/views/users/UserManagementView.vue'),
+        meta: { requiresAuth: true, title: '用户管理' },
+      },
+      {
         path: '/google/accounts',
         name: 'google-accounts',
         component: () => import('@/views/google/GoogleAccountList.vue'),
