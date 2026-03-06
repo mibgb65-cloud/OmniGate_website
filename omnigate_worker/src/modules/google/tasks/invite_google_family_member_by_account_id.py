@@ -96,6 +96,12 @@ class InviteGoogleFamilyMemberByAccountIdTask(BaseTask):
                 "data": sanitized,
             }
         except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).exception(
+                "Family invite task failed. task_id=%s google_account_id=%s target_email=%s",
+                self.task_id,
+                params.google_account_id,
+                params.invited_account_email,
+            )
             elapsed = round(time.monotonic() - started_at, 2)
             await self.log_error(
                 "Service execution failed",

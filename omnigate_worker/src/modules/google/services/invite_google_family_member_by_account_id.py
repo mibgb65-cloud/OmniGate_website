@@ -278,7 +278,7 @@ class InviteGoogleFamilyMemberByAccountIdService:
         if self._db_pool is not None:
             return self._db_pool
         if self._owned_database is None:
-            self._owned_database = Database(settings.postgres_dsn)
+            self._owned_database = Database(settings.resolved_postgres_dsn)
             await self._owned_database.connect()
             self._db_pool = self._owned_database.pool
         return self._db_pool

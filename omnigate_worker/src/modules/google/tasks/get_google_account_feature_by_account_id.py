@@ -93,6 +93,11 @@ class GetGoogleAccountFeatureByAccountIdTask(BaseTask):
                 "data": sanitized,
             }
         except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).exception(
+                "Feature sync task failed. task_id=%s google_account_id=%s",
+                self.task_id,
+                params.google_account_id,
+            )
             elapsed = round(time.monotonic() - started_at, 2)
             await self.log_error(
                 "Service execution failed",
