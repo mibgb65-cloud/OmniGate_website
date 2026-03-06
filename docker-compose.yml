@@ -67,7 +67,11 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       WORKER_INSTANCE_ID: ${WORKER_INSTANCE_ID:-worker-1}
       REDIS_URL: redis://redis:6379/${REDIS_DATABASE:-0}
-      POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-omnigate}:${POSTGRES_PASSWORD:-ChangeThisPostgresPassword}@postgres:5432/${POSTGRES_DB:-omnigate}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-omnigate}
+      POSTGRES_USER: ${POSTGRES_USER:-omnigate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeThisPostgresPassword}
       TASK_STREAM: ${TASK_STREAM:-task_stream}
       TASK_LOG_STREAM: ${TASK_LOG_STREAM:-task_log_stream}
       TASK_STREAM_GROUP: ${TASK_STREAM_GROUP:-worker_group}

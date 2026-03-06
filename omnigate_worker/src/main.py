@@ -21,7 +21,7 @@ def configure_logging() -> None:
 
 
 async def run_worker() -> None:
-    database = Database(settings.postgres_dsn)
+    database = Database(settings.resolved_postgres_dsn)
     await database.connect()
     try:
         task_repo = TaskRunRepository(database.pool)

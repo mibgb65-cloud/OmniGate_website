@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,7 +22,12 @@ class Settings(BaseSettings):
 
     worker_instance_id: str = "worker-local-1"
     redis_url: str = "redis://localhost:6379/0"
-    postgres_dsn: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/omnigate"
+    postgres_dsn: str = ""
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "omnigate"
 
     task_stream: str = "task_stream"
     task_log_stream: str = "task_log_stream"
@@ -39,6 +45,19 @@ class Settings(BaseSettings):
     heartbeat_interval_seconds: int = 30
     retry_max_attempts: int = 3
     retry_delay_seconds: int = 10
+
+    @property
+    def resolved_postgres_dsn(self) -> str:
+        if self.postgres_dsn.strip():
+            return self.postgres_dsn.strip()
+
+        encoded_user = quote(self.postgres_user, safe="")
+        encoded_password = quote(self.postgres_password, safe="")
+        encoded_database = quote(self.postgres_db, safe="")
+        return (
+            f"postgresql+asyncpg://{encoded_user}:{encoded_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{encoded_database}"
+        )
 
 
 settings = Settings()

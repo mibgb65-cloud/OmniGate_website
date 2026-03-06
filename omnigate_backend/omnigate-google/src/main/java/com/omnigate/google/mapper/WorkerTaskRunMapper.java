@@ -155,11 +155,11 @@ public interface WorkerTaskRunMapper {
             "    FROM task_runs",
             "    WHERE root_run_id IN",
             "    <foreach collection='rootRunIds' item='rootRunId' open='(' separator=',' close=')'>",
-            "        #{rootRunId}",
+            "        CAST(#{rootRunId} AS uuid)",
             "    </foreach>",
             ") latest",
             "WHERE latest.rn = 1",
             "</script>"
     })
-    List<GoogleTaskRunStatusVO> selectLatestStatusesByRootRunIds(@Param("rootRunIds") List<UUID> rootRunIds);
+    List<GoogleTaskRunStatusVO> selectLatestStatusesByRootRunIds(@Param("rootRunIds") List<String> rootRunIds);
 }

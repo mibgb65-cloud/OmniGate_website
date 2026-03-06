@@ -139,15 +139,15 @@ public class GoogleAccountTaskServiceImpl implements GoogleAccountTaskService {
         if (rootRunIds == null || rootRunIds.isEmpty()) {
             return List.of();
         }
-        List<UUID> rootUuidList = rootRunIds.stream()
+        List<String> normalizedRootRunIds = rootRunIds.stream()
                 .filter(StringUtils::hasText)
-                .map(rootRunId -> parseUuid(rootRunId, "rootRunId"))
+                .map(rootRunId -> parseUuid(rootRunId, "rootRunId").toString())
                 .distinct()
                 .toList();
-        if (rootUuidList.isEmpty()) {
+        if (normalizedRootRunIds.isEmpty()) {
             return List.of();
         }
-        return workerTaskRunMapper.selectLatestStatusesByRootRunIds(rootUuidList);
+        return workerTaskRunMapper.selectLatestStatusesByRootRunIds(normalizedRootRunIds);
     }
 
     private GoogleTaskDispatchVO dispatchFeatureSyncTaskInternal(GoogleAccountBase accountBase) {
