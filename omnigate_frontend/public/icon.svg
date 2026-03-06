@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+    <defs>
+        <linearGradient id="topFace" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="100%" stop-color="#E2E8F0"/>
+        </linearGradient>
+        <linearGradient id="leftFace" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#818CF8"/>
+            <stop offset="100%" stop-color="#4F46E5"/>
+        </linearGradient>
+        <linearGradient id="rightFace" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#38BDF8"/>
+            <stop offset="100%" stop-color="#0284C7"/>
+        </linearGradient>
+        <radialGradient id="coreGlow" cx="30%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#FCD34D"/>
+            <stop offset="100%" stop-color="#D97706"/>
+        </radialGradient>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="6" stdDeviation="4" flood-color="#000" flood-opacity="0.3"/>
+        </filter>
+    </defs>
+
+    <g transform="translate(0, 8)">
+        <path d="M32 50 L12 38 L12 18 L32 30 Z" fill="url(#leftFace)" />
+        <path d="M32 50 L52 38 L52 18 L32 30 Z" fill="url(#rightFace)" />
+        <path d="M32 6 L52 18 L32 30 L12 18 Z M32 14 L24 19 L32 24 L40 19 Z" fill="url(#topFace)" fill-rule="evenodd" />
+    </g>
+
+    <circle cx="32" cy="18" r="7" fill="url(#coreGlow)" filter="url(#shadow)" />
+</svg>
