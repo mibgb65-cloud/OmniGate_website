@@ -43,6 +43,8 @@ let taskFlowToken = 0
 let taskLogSocket = null
 let taskBackgroundMonitorTimer = null
 let activeTaskExecution = null
+let taskLogFlushTimer = null
+let pendingTaskLogs = []
 
 const taskConsoleVisible = ref(false)
 const taskRunning = ref(false)
@@ -65,6 +67,7 @@ const baseEditForm = reactive({
 
 const TASK_LOG_WS_PATH = '/ws/task-log'
 const TASK_DEBUG_QUERY_KEY = 'debug'
+const TASK_LOG_RENDER_DELAY_MS = 220
 const taskDebugPanelId = 'google-task-debug-panel'
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
@@ -945,6 +948,7 @@ function resetTaskConsole() {
   stopTaskBackgroundMonitor()
   activeTaskExecution = null
   closeTaskLogSocket('reset')
+  clearPendingTaskLogs()
   taskLogs.value = []
   taskMeta.value = null
   taskLabel.value = ''
@@ -968,6 +972,47 @@ function stopTaskBackgroundMonitor() {
     window.clearTimeout(taskBackgroundMonitorTimer)
   }
   taskBackgroundMonitorTimer = null
+}
+
+function stopTaskLogFlushTimer() {
+  if (taskLogFlushTimer && typeof window !== 'undefined') {
+    window.clearTimeout(taskLogFlushTimer)
+  }
+  taskLogFlushTimer = null
+}
+
+function clearPendingTaskLogs() {
+  stopTaskLogFlushTimer()
+  pendingTaskLogs = []
+}
+
+function flushPendingTaskLogs() {
+  stopTaskLogFlushTimer()
+  if (!pendingTaskLogs.length) return
+
+  const queuedEntries = pendingTaskLogs
+  pendingTaskLogs = []
+  taskLogs.value = [...taskLogs.value, ...queuedEntries].slice(-300)
+
+  queuedEntries.forEach((entry) => {
+    if (entry.stepTotal) {
+      taskProgress.total = Math.max(taskProgress.total, entry.stepTotal)
+    }
+    if (entry.step) {
+      taskProgress.current = Math.max(taskProgress.current, entry.step)
+    }
+  })
+}
+
+function scheduleTaskLogFlush() {
+  if (typeof window === 'undefined') {
+    flushPendingTaskLogs()
+    return
+  }
+  if (taskLogFlushTimer) return
+  taskLogFlushTimer = window.setTimeout(() => {
+    flushPendingTaskLogs()
+  }, TASK_LOG_RENDER_DELAY_MS)
 }
 
 function hasPendingBackgroundTask() {
@@ -1097,13 +1142,8 @@ function appendTaskLog({
     stepTotal: normalizedTotal,
   }
 
-  taskLogs.value = [...taskLogs.value, entry].slice(-300)
-  if (normalizedTotal) {
-    taskProgress.total = Math.max(taskProgress.total, normalizedTotal)
-  }
-  if (normalizedStep) {
-    taskProgress.current = Math.max(taskProgress.current, normalizedStep)
-  }
+  pendingTaskLogs.push(entry)
+  scheduleTaskLogFlush()
 }
 
 async function emitTaskDispatchPlan(taskName, stepTotal) {
@@ -1459,6 +1499,7 @@ onBeforeUnmount(() => {
   baseEditing.value = false
   setTaskConsoleVisible(false, { syncQuery: false })
   resetTaskConsole()
+  clearPendingTaskLogs()
   if (copyFeedbackTimer) {
     clearTimeout(copyFeedbackTimer)
     copyFeedbackTimer = null
@@ -1683,9 +1724,27 @@ onBeforeUnmount(() => {
               <el-descriptions-item label="订阅类型">{{ toNullableText(detail?.subTier) }}</el-descriptions-item>
               <el-descriptions-item label="到期日期">{{ toNullableText(detail?.expireDate) }}</el-descriptions-item>
               <el-descriptions-item label="学生认证链接">
-                <a v-if="detail?.studentLink" :href="detail.studentLink" target="_blank" rel="noopener noreferrer" class="text-link">
-                  打开链接
-                </a>
+                <div v-if="detail?.studentLink" class="detail-link-field">
+                  <a
+                    :href="detail.studentLink"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-link detail-link-url"
+                    :title="detail.studentLink"
+                  >
+                    {{ detail.studentLink }}
+                  </a>
+                  <el-button
+                    text
+                    size="small"
+                    class="credential-copy-btn detail-link-copy"
+                    :class="{ 'is-copied': copiedField === 'student-link' }"
+                    :icon="copiedField === 'student-link' ? Check : CopyDocument"
+                    @click="handleCopyValue(detail.studentLink, '学生认证链接', 'student-link')"
+                  >
+                    {{ copiedField === 'student-link' ? '已复制' : '复制链接' }}
+                  </el-button>
+                </div>
                 <span v-else>-</span>
               </el-descriptions-item>
               <el-descriptions-item label="备注">{{ toNullableText(detail?.remark) }}</el-descriptions-item>
@@ -1830,23 +1889,25 @@ onBeforeUnmount(() => {
                 <small>{{ hasTaskLogs ? `最近 ${taskTimelineLogs.length} 条` : '暂无任务轨迹' }}</small>
               </div>
 
-              <div v-if="!hasTaskLogs" class="activity-empty-state">
-                <strong>这里会展示任务的关键状态</strong>
-                <p>触发同步或邀请任务后，页面会持续展示队列状态、执行结果和自动回写情况。</p>
-              </div>
+              <div class="activity-log-viewport">
+                <div v-if="!hasTaskLogs" class="activity-empty-state activity-empty-state--timeline">
+                  <strong>这里会展示任务的关键状态</strong>
+                  <p>触发同步或邀请任务后，页面会持续展示队列状态、执行结果和自动回写情况。</p>
+                </div>
 
-              <transition-group v-else name="log-item" tag="ul" class="activity-timeline">
-                <li v-for="item in taskTimelineLogs" :key="item.id" class="activity-timeline-item">
-                  <span class="log-dot" :class="`is-${item.level}`"></span>
-                  <div class="activity-timeline-content">
-                    <div class="activity-timeline-head">
-                      <strong>{{ item.message }}</strong>
-                      <small>{{ item.time }}</small>
+                <ul v-else class="activity-timeline">
+                  <li v-for="item in taskTimelineLogs" :key="item.id" class="activity-timeline-item">
+                    <span class="log-dot" :class="`is-${item.level}`"></span>
+                    <div class="activity-timeline-content">
+                      <div class="activity-timeline-head">
+                        <strong>{{ item.message }}</strong>
+                        <small>{{ item.time }}</small>
+                      </div>
+                      <p>{{ resolveLogLevelText(item.level) }}</p>
                     </div>
-                    <p>{{ resolveLogLevelText(item.level) }}</p>
-                  </div>
-                </li>
-              </transition-group>
+                  </li>
+                </ul>
+              </div>
             </section>
 
             <section class="activity-section activity-debug-shell" :class="{ 'is-open': taskConsoleVisible }">
@@ -1896,6 +1957,7 @@ onBeforeUnmount(() => {
                 </div>
               </transition>
             </section>
+
             <section class="sidebar-support-card">
               <header class="sidebar-support-header">
                 <div>
@@ -2495,6 +2557,26 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.detail-link-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.detail-link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.detail-link-copy {
+  justify-self: end;
+}
+
 .relation-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2636,11 +2718,6 @@ onBeforeUnmount(() => {
 .task-activity-card {
   position: sticky;
   top: 88px;
-  max-height: calc(100vh - 104px);
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
   border-radius: 18px;
   border: 1px solid var(--detail-panel-border);
   box-shadow: var(--detail-panel-shadow);
@@ -2972,6 +3049,21 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.activity-empty-state--timeline {
+  min-height: 100%;
+}
+
+.activity-log-viewport {
+  min-height: 264px;
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  overflow-anchor: none;
+  padding-right: 4px;
+}
+
 .activity-timeline {
   list-style: none;
   padding: 0;
@@ -3079,12 +3171,15 @@ onBeforeUnmount(() => {
 }
 
 .debug-log-panel {
-  max-height: 240px;
+  height: 240px;
   overflow: auto;
   padding: 8px;
   border-radius: 16px;
   background: linear-gradient(180deg, #0f172a, #111c2d);
   border: 1px solid rgba(15, 23, 42, 0.2);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
 }
 
 .debug-log-list {
@@ -3387,19 +3482,6 @@ onBeforeUnmount(() => {
   transform: translateY(-6px);
 }
 
-.log-item-enter-active,
-.log-item-leave-active {
-  transition:
-    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.log-item-enter-from,
-.log-item-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
 .compact-list-enter-active,
 .compact-list-leave-active {
   transition:
@@ -3450,8 +3532,6 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .card-enter,
-  .log-item-enter-active,
-  .log-item-leave-active,
   .compact-list-enter-active,
   .compact-list-leave-active,
   .detail-main {
@@ -3467,8 +3547,6 @@ onBeforeUnmount(() => {
 
   .task-activity-card {
     position: static;
-    max-height: none;
-    overflow: visible;
   }
 }
 
@@ -3510,6 +3588,27 @@ onBeforeUnmount(() => {
   .activity-state-side {
     justify-items: start;
     text-align: left;
+  }
+
+  .activity-log-viewport {
+    min-height: 232px;
+    max-height: 232px;
+  }
+
+  .detail-link-field {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .detail-link-url {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: initial;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-link-copy {
+    justify-self: start;
   }
 }
 

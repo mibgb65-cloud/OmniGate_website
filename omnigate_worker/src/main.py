@@ -41,6 +41,7 @@ async def run_worker() -> None:
         )
         worker = WorkerNode(
             settings=settings,
+            db_pool=database.pool,
             state_manager=state_manager,
             stream_client=stream_client,
             heartbeat_service=heartbeat,

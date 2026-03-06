@@ -15,14 +15,12 @@ from uuid import uuid4
 import asyncpg
 
 from src.browser.browser_actions import BrowserActions
-from src.config import settings
-from src.db.database import Database
+from src.db import GoogleAccountPersistence, GoogleAccountRepository
 from src.modules.google.action.google_auth_actions import GoogleAuthActions
 from src.modules.google.action.google_family_invite_actions import GoogleFamilyInviteActions
 from src.modules.google.action.google_family_status_actions import GoogleFamilyActions
 from src.modules.google.models.google_action_params import GoogleAuthParams, GoogleFamilyInviteParams
 from src.modules.google.models.google_service_params import InviteGoogleFamilyMemberByAccountIdParams
-from src.modules.google.services.google_account_persistence import GoogleAccountPersistence
 from src.utils import AesTypeHandlerCompat
 
 
@@ -44,13 +42,24 @@ class InviteGoogleFamilyMemberByAccountIdService:
         self,
         *,
         db_pool: asyncpg.Pool | None = None,
+        account_repository: GoogleAccountRepository | None = None,
+        persistence: GoogleAccountPersistence | None = None,
         browser_actions: BrowserActions | None = None,
         auth_actions: GoogleAuthActions | None = None,
         family_invite_actions: GoogleFamilyInviteActions | None = None,
         family_actions: GoogleFamilyActions | None = None,
     ) -> None:
-        self._db_pool = db_pool
-        self._owned_database: Database | None = None
+        if account_repository is None:
+            if db_pool is None:
+                raise ValueError("db_pool or account_repository is required")
+            account_repository = GoogleAccountRepository(db_pool)
+        if persistence is None:
+            if db_pool is None:
+                raise ValueError("db_pool or persistence is required")
+            persistence = GoogleAccountPersistence(db_pool)
+
+        self._account_repository = account_repository
+        self._persistence = persistence
         self.browser_actions = browser_actions or BrowserActions()
         self.auth_actions = auth_actions or GoogleAuthActions(browser_actions=self.browser_actions)
         self.family_invite_actions = (
@@ -168,9 +177,7 @@ class InviteGoogleFamilyMemberByAccountIdService:
         family_status: dict[str, Any] | None,
         trace_id: str,
     ) -> None:
-        pool = await self._ensure_pool()
-        persistence = GoogleAccountPersistence(pool)
-        await persistence.persist_family_invite_result(
+        await self._persistence.persist_family_invite_result(
             account_id=account_id,
             invite_result=invite_result,
             family_status=family_status,
@@ -232,27 +239,15 @@ class InviteGoogleFamilyMemberByAccountIdService:
 
     async def close(self) -> None:
         await self.close_browser()
-        if self._owned_database is not None:
-            await self._owned_database.close()
-            self._owned_database = None
-            self._db_pool = None
 
     async def _load_credential(self, account_id: int) -> GoogleAccountCredential:
-        pool = await self._ensure_pool()
-        query = """
-            SELECT id, email, password, COALESCE(totp_secret, '') AS totp_secret
-            FROM acc_google_base
-            WHERE id = $1
-              AND deleted = 0
-            LIMIT 1
-        """
-        row = await pool.fetchrow(query, account_id)
-        if row is None:
+        record = await self._account_repository.get_active_account_credential(account_id)
+        if record is None:
             raise ValueError(f"Google account not found or deleted: account_id={account_id}")
 
-        email = str(row["email"] or "").strip()
-        encrypted_password = str(row["password"] or "")
-        encrypted_totp = str(row["totp_secret"] or "")
+        email = record.email
+        encrypted_password = record.encrypted_password
+        encrypted_totp = record.encrypted_totp_secret
 
         if not self._decryptor.is_backend_available():
             if self._looks_like_cipher_text(encrypted_password) or self._looks_like_cipher_text(encrypted_totp):
@@ -268,20 +263,11 @@ class InviteGoogleFamilyMemberByAccountIdService:
             raise ValueError(f"Google account password is empty: account_id={account_id}")
 
         return GoogleAccountCredential(
-            account_id=int(row["id"]),
+            account_id=record.account_id,
             email=email,
             password=password,
             totp_secret=str(self._decryptor.decrypt_safely(encrypted_totp) or "").strip(),
         )
-
-    async def _ensure_pool(self) -> asyncpg.Pool:
-        if self._db_pool is not None:
-            return self._db_pool
-        if self._owned_database is None:
-            self._owned_database = Database(settings.resolved_postgres_dsn)
-            await self._owned_database.connect()
-            self._db_pool = self._owned_database.pool
-        return self._db_pool
 
     async def _wait_for_manual_operation(self, *, max_wait_seconds: int | None) -> None:
         start = time.monotonic()

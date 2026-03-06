@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.modules.base_task import BaseTask
 from src.modules.google.tasks.get_google_account_feature_by_account_id import (
@@ -15,6 +15,9 @@ from src.modules.google.tasks.invite_google_family_member_by_account_id import (
 )
 from src.modules.google.tasks.search_keyword import SearchKeywordTask
 from src.utils.task_logger import LogSink
+
+if TYPE_CHECKING:
+    import asyncpg
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +56,7 @@ def create_task(
     worker_instance_id: str,
     attempt_no: int | None,
     log_sink: LogSink,
+    db_pool: "asyncpg.Pool | None" = None,
 ) -> BaseTask:
     route = TaskRoute.from_payload(task_payload)
     task_cls = _TASK_REGISTRY.get(route)
@@ -63,4 +67,5 @@ def create_task(
         worker_instance_id=worker_instance_id,
         attempt_no=attempt_no,
         log_sink=log_sink,
+        db_pool=db_pool,
     )

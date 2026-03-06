@@ -70,7 +70,7 @@ class InviteGoogleFamilyMemberByAccountIdTask(BaseTask):
             },
         )
 
-        service = InviteGoogleFamilyMemberByAccountIdService()
+        service = InviteGoogleFamilyMemberByAccountIdService(db_pool=self.db_pool)
         try:
             async with TaskLogBridge(
                 sink=self._forward_bridge_log,

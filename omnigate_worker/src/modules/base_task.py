@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from src.utils.task_logger import LogSink, TaskLogger
+
+if TYPE_CHECKING:
+    import asyncpg
 
 
 class BaseTask(ABC):
@@ -18,8 +21,10 @@ class BaseTask(ABC):
         log_sink: LogSink | None = None,
         worker_instance_id: str | None = None,
         attempt_no: int | None = None,
+        db_pool: "asyncpg.Pool | None" = None,
     ) -> None:
         self.task_id = task_id or str(uuid4())
+        self.db_pool = db_pool
         self.logger = TaskLogger(
             task_id=self.task_id,
             module=self.module_name,

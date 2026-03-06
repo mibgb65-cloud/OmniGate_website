@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+import asyncpg
+
 from src.config import Settings
 from src.core.heartbeat import HeartbeatService
 from src.core.state_manager import TaskStateManager, WorkerRuntimeSettings
@@ -28,11 +30,13 @@ class WorkerNode:
         self,
         *,
         settings: Settings,
+        db_pool: asyncpg.Pool,
         state_manager: TaskStateManager,
         stream_client: RedisStreamClient,
         heartbeat_service: HeartbeatService,
     ) -> None:
         self._settings = settings
+        self._db_pool = db_pool
         self._state_manager = state_manager
         self._stream_client = stream_client
         self._heartbeat_service = heartbeat_service
@@ -206,6 +210,7 @@ class WorkerNode:
                 worker_instance_id=self._settings.worker_instance_id,
                 attempt_no=task_record.attempt_no,
                 log_sink=self._build_task_log_sink(task_run_id=task_run_id, root_run_id=task_record.root_run_id),
+                db_pool=self._db_pool,
             )
             biz_payload = task_payload.get("payload")
             if not isinstance(biz_payload, dict):
