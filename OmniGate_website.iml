@@ -3,8 +3,17 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/omnigate_worker" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.codex" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-bootstrap/target" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-chatgpt/target" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-common/target" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-github/target" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-google/target" />
+      <excludeFolder url="file://$MODULE_DIR$/omnigate_backend/omnigate-user/target" />
     </content>
+    <orderEntry type="jdk" jdkName="Python 3.13 (OmniGate_website) (4)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

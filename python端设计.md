@@ -487,3 +487,16 @@ omnigate_worker/
 └── Dockerfile
 ```
 
+
+
+| 位置                  | 主要职责                      | 该放什么                                                | 不该放什么                    | 被谁调用                   |
+| --------------------- | ----------------------------- | ------------------------------------------------------- | ----------------------------- | -------------------------- |
+| google                | Google 业务边界               | 只放 Google 相关代码                                    | Redis/Worker 调度代码         | modules/actions 路由后进入 |
+| google/tasks          | 任务入口层                    | run(payload)、参数校验、调用 service、返回统一状态      | 具体浏览器细节、复杂 DOM 操作 | Worker 直接调用 |
+| google/services       | 业务编排层                    | 流程顺序（登录→抓取→清洗→返回）                         | 低层 API/浏览器驱动细节       | task 调用                  |
+| google/action         | Google 内部动作层（你新加的） | 可复用动作步骤（如 login_action、fetch_profile_action） | 全局任务路由注册                 | service 调用 |
+| google/infrastructure | 外部依赖适配层                | nodriver 封装、页面选择器、网关/客户端、重试适配        | 业务编排逻辑                  | action/service 调用          |
+| google/models         | 数据模型层                    | 请求/响应 DTO、中间状态对象、枚举                       | 真实执行逻辑                  | task/service/action 共用   |
+| auth.py               | Google 认证能力               | 登录、2FA、session/cookie 管理                          | 任务编排                      | service/action 调用        |
+| helpers.py            | 纯工具函数                    | 文本解析、时间转换、页面小工具函数                      | 大段流程控制                  | 各层复用                   |
+| init.py               | 模块导出                      | 对外暴露类/函数                                         | 业务逻辑堆在这里              | import 使用                |

@@ -22,7 +22,7 @@ mybatis-plus:
 omnigate:
   security:
     jwt:
-      issuer: omnigate-test
+      issuer: omnigate-tests
       access-expire-minutes: 30
       refresh-expire-days: 7
-      secret: test-change-this-secret
+      secret: tests-change-this-secret

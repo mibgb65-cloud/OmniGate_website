@@ -36,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String ACCESS_TOKEN_PARAM = "access_token";
 
     private final JwtUtils jwtUtils;
 
@@ -104,9 +105,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private String resolveAccessToken(HttpServletRequest request) {
         String authorization = request.getHeader(AUTHORIZATION_HEADER);
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
-            return null;
+        if (StringUtils.hasText(authorization) && authorization.startsWith(BEARER_PREFIX)) {
+            return authorization.substring(BEARER_PREFIX.length()).trim();
         }
-        return authorization.substring(BEARER_PREFIX.length()).trim();
+
+        String queryToken = request.getParameter(ACCESS_TOKEN_PARAM);
+        if (StringUtils.hasText(queryToken)) {
+            return queryToken.trim();
+        }
+        return null;
     }
 }

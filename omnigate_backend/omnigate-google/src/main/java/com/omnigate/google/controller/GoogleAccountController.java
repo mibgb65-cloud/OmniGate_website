@@ -5,11 +5,15 @@ import com.omnigate.common.response.Result;
 import com.omnigate.google.model.dto.GoogleAccountImportDTO;
 import com.omnigate.google.model.dto.GoogleAccountPageQueryDTO;
 import com.omnigate.google.model.dto.GoogleAccountUpdateDTO;
+import com.omnigate.google.model.dto.GoogleBatchSyncRequestDTO;
+import com.omnigate.google.model.dto.GoogleInviteFamilyMemberTaskDTO;
 import com.omnigate.google.model.vo.GoogleAccountDetailVO;
 import com.omnigate.google.model.vo.GoogleAccountListVO;
 import com.omnigate.google.model.vo.GoogleFamilyMemberVO;
 import com.omnigate.google.model.vo.GoogleInviteLinkVO;
+import com.omnigate.google.model.vo.GoogleTaskDispatchVO;
 import com.omnigate.google.service.GoogleAccountService;
+import com.omnigate.google.service.GoogleAccountTaskService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
@@ -36,6 +40,7 @@ import java.util.List;
 public class GoogleAccountController {
 
     private final GoogleAccountService googleAccountService;
+    private final GoogleAccountTaskService googleAccountTaskService;
 
     /**
      * 导入 Google 账号（单条/批量）。
@@ -116,5 +121,51 @@ public class GoogleAccountController {
     public Result<Void> deleteAccount(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
         googleAccountService.deleteAccount(id);
         return Result.success();
+    }
+
+    /**
+     * 投递单个账号信息同步任务。
+     *
+     * @param id 账号 ID
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/sync")
+    public Result<GoogleTaskDispatchVO> syncAccount(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
+        return Result.success(googleAccountTaskService.dispatchFeatureSyncTask(id));
+    }
+
+    /**
+     * 投递批量账号信息同步任务。
+     *
+     * @param requestDTO 批量请求参数
+     * @return 任务投递结果列表
+     */
+    @PostMapping("/sync/batch")
+    public Result<List<GoogleTaskDispatchVO>> syncAccountsBatch(@RequestBody @Valid GoogleBatchSyncRequestDTO requestDTO) {
+        return Result.success(googleAccountTaskService.dispatchFeatureSyncBatchTasks(requestDTO.getAccountIds()));
+    }
+
+    /**
+     * 投递学生认证链接同步任务。
+     *
+     * @param id 账号 ID
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/student-eligibility/sync")
+    public Result<GoogleTaskDispatchVO> syncStudentEligibility(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
+        return Result.success(googleAccountTaskService.dispatchStudentEligibilityTask(id));
+    }
+
+    /**
+     * 投递家庭组邀请任务。
+     *
+     * @param id 母号账号 ID
+     * @param requestDTO 邀请参数
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/family-members/invite")
+    public Result<GoogleTaskDispatchVO> inviteFamilyMember(@PathVariable @Positive(message = "账号ID必须大于0") Long id,
+                                                            @RequestBody @Valid GoogleInviteFamilyMemberTaskDTO requestDTO) {
+        return Result.success(googleAccountTaskService.dispatchFamilyInviteTask(id, requestDTO.getInvitedAccountEmail()));
     }
 }

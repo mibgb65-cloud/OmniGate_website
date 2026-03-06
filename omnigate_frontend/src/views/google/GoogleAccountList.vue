@@ -1,10 +1,17 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Refresh, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 
-import { deleteGoogleAccount, importGoogleAccounts, pageGoogleAccounts } from '@/api/google'
+import {
+  batchGetGoogleLatestTaskRunStatusesByRootRunIds,
+  deleteGoogleAccount,
+  dispatchGoogleAccountSyncTask,
+  dispatchGoogleBatchSyncTask,
+  importGoogleAccounts,
+  pageGoogleAccounts,
+} from '@/api/google'
 
 const loading = ref(false)
 const rows = ref([])
@@ -18,6 +25,8 @@ const importForm = reactive(createGoogleImportForm())
 const selectedRowIds = ref([])
 const batchRefreshing = ref(false)
 const rowRefreshingMap = reactive({})
+const syncTaskTrackerMap = reactive({})
+let taskStatusPollTimer = null
 
 const filterForm = reactive({
   email: '',
@@ -31,14 +40,16 @@ const pager = reactive({
 })
 
 const syncStatusOptions = [
-  { label: '待同步', value: 0 },
-  { label: '同步成功', value: 1 },
-  { label: '同步失败', value: 2 },
+  { label: '未开始', value: 0 },
+  { label: '等待执行', value: 1 },
+  { label: '执行中', value: 2 },
+  { label: '同步成功', value: 3 },
+  { label: '同步失败', value: 4 },
 ]
 
 const dashboardStats = computed(() => {
   const total = rows.value.length
-  const successCount = rows.value.filter((item) => item.syncStatus === 1).length
+  const successCount = rows.value.filter((item) => item.syncStatus === 3).length
   const familyOpened = rows.value.filter((item) => item.familyStatus === 1).length
   return [
     { label: '当前页总数', value: total },
@@ -51,62 +62,12 @@ function toNullableText(value) {
   return value || '-'
 }
 
-function wait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-
-function pickRandom(list) {
-  return list[Math.floor(Math.random() * list.length)]
-}
-
-function formatDateOnly(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function formatDateTime(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hour = String(date.getHours()).padStart(2, '0')
-  const minute = String(date.getMinutes()).padStart(2, '0')
-  const second = String(date.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
-
-function buildMockAccountInfo() {
-  const subTier = pickRandom(['none', 'plus', 'pro'])
-  const familyStatus = pickRandom([0, 1])
-  const inviteLinkStatus = familyStatus === 1 ? pickRandom([0, 1, 1]) : 0
-  const expireDate =
-    subTier === 'none'
-      ? 'none'
-      : formatDateOnly(new Date(Date.now() + (45 + Math.floor(Math.random() * 180)) * 24 * 60 * 60 * 1000))
-
-  return {
-    syncStatus: pickRandom([1, 1, 1, 0, 2]),
-    familyStatus,
-    inviteLinkStatus,
-    invitedCount: inviteLinkStatus ? Math.floor(Math.random() * 6) : 0,
-    subTier,
-    expireDate,
-    updatedAt: formatDateTime(new Date()),
-  }
-}
-
-function applyMockInfoForRow(row) {
-  if (!row) return
-  Object.assign(row, buildMockAccountInfo())
-}
-
 function resolveSyncTag(status) {
-  if (status === 1) return { type: 'success', text: '同步成功' }
-  if (status === 2) return { type: 'danger', text: '同步失败' }
-  return { type: 'warning', text: '待同步' }
+  if (status === 1) return { type: 'warning', text: '等待执行' }
+  if (status === 2) return { type: 'primary', text: '执行中' }
+  if (status === 3) return { type: 'success', text: '同步成功' }
+  if (status === 4) return { type: 'danger', text: '同步失败' }
+  return { type: 'info', text: '未开始' }
 }
 
 function resolveBinaryTag(status, trueLabel, falseLabel) {
@@ -134,6 +95,103 @@ function createGoogleImportForm() {
     totpSecret: '',
     region: '',
     remark: '',
+  }
+}
+
+function normalizeTaskRunStatus(status) {
+  return String(status || '').trim().toLowerCase()
+}
+
+function isTrackedTaskActive(status) {
+  return status === 'queued' || status === 'running'
+}
+
+function trackSyncTask(dispatch) {
+  const accountId = Number(dispatch?.accountId)
+  const rootRunId = String(dispatch?.rootRunId || '').trim()
+  const taskRunId = String(dispatch?.taskRunId || '').trim()
+  if (!Number.isFinite(accountId) || accountId <= 0 || (!rootRunId && !taskRunId)) {
+    return
+  }
+  syncTaskTrackerMap[accountId] = {
+    rootRunId,
+    taskRunId,
+    status: normalizeTaskRunStatus(dispatch?.status || 'queued'),
+  }
+}
+
+function clearSyncTaskTracker(accountId) {
+  if (accountId === null || accountId === undefined) return
+  delete syncTaskTrackerMap[accountId]
+}
+
+function hasTrackedSyncTasks() {
+  return Object.keys(syncTaskTrackerMap).length > 0
+}
+
+function ensureTaskStatusPolling() {
+  if (taskStatusPollTimer || typeof window === 'undefined') return
+  taskStatusPollTimer = window.setInterval(() => {
+    pollTrackedSyncTaskStatuses()
+  }, 2000)
+}
+
+function stopTaskStatusPolling() {
+  if (taskStatusPollTimer && typeof window !== 'undefined') {
+    window.clearInterval(taskStatusPollTimer)
+  }
+  taskStatusPollTimer = null
+}
+
+async function pollTrackedSyncTaskStatuses() {
+  const trackedEntries = Object.entries(syncTaskTrackerMap)
+  if (!trackedEntries.length) {
+    stopTaskStatusPolling()
+    return
+  }
+
+  const rootRunIds = trackedEntries.map(([, task]) => task.rootRunId).filter(Boolean)
+  if (!rootRunIds.length) return
+
+  let shouldRefresh = false
+  const completedAccountIds = []
+
+  try {
+    const snapshots = await batchGetGoogleLatestTaskRunStatusesByRootRunIds(rootRunIds)
+    const snapshotMap = new Map(
+      (Array.isArray(snapshots) ? snapshots : []).map((item) => [String(item?.rootRunId || '').trim(), item]),
+    )
+
+    trackedEntries.forEach(([accountId, task]) => {
+      const snapshot = snapshotMap.get(String(task.rootRunId || '').trim())
+      if (!snapshot) return
+
+      const nextStatus = normalizeTaskRunStatus(snapshot?.status)
+      if (!nextStatus) return
+
+      if (task.status !== nextStatus) {
+        task.status = nextStatus
+        shouldRefresh = true
+      }
+
+      if (!isTrackedTaskActive(nextStatus)) {
+        completedAccountIds.push(accountId)
+      }
+    })
+  } catch {
+    return
+  }
+
+  if (shouldRefresh) {
+    await fetchGoogleAccounts()
+  }
+
+  completedAccountIds.forEach((accountId) => {
+    clearSyncTaskTracker(accountId)
+  })
+
+  if (!hasTrackedSyncTasks()) {
+    stopTaskStatusPolling()
   }
 }
 
@@ -256,7 +314,7 @@ function handleRowClick(row, column) {
 }
 
 function resolveRowClass({ row }) {
-  if (rowRefreshingMap[row?.id]) {
+  if (isRowRefreshing(row?.id)) {
     return 'clickable-row row-refreshing'
   }
   return 'clickable-row'
@@ -267,7 +325,8 @@ function handleSelectionChange(selection) {
 }
 
 function isRowRefreshing(id) {
-  return Boolean(rowRefreshingMap[id])
+  const trackedStatus = normalizeTaskRunStatus(syncTaskTrackerMap[id]?.status)
+  return Boolean(rowRefreshingMap[id] || isTrackedTaskActive(trackedStatus))
 }
 
 async function handleRefreshInfo(row) {
@@ -275,9 +334,12 @@ async function handleRefreshInfo(row) {
 
   rowRefreshingMap[row.id] = true
   try {
-    await wait(520 + Math.floor(Math.random() * 500))
-    applyMockInfoForRow(row)
-    ElMessage.success(`已刷新 ${row.email || row.id} 的信息（模拟）`)
+    const dispatch = await dispatchGoogleAccountSyncTask(row.id)
+    trackSyncTask(dispatch)
+    ensureTaskStatusPolling()
+    await fetchGoogleAccounts()
+    const taskText = dispatch?.taskRunId ? `任务 ${dispatch.taskRunId}` : '任务已入队'
+    ElMessage.success(`已提交刷新：${row.email || row.id}（${taskText}）`)
   } finally {
     rowRefreshingMap[row.id] = false
   }
@@ -290,22 +352,22 @@ async function handleBatchRefreshInfo() {
   }
 
   batchRefreshing.value = true
-  const idSet = new Set(selectedRowIds.value)
-  selectedRowIds.value.forEach((id) => {
+  const selectedIds = [...selectedRowIds.value]
+  selectedIds.forEach((id) => {
     rowRefreshingMap[id] = true
   })
 
   try {
-    await wait(800 + Math.floor(Math.random() * 700))
-    let refreshedCount = 0
-    rows.value.forEach((row) => {
-      if (!idSet.has(row.id)) return
-      applyMockInfoForRow(row)
-      refreshedCount += 1
+    const dispatches = await dispatchGoogleBatchSyncTask(selectedRowIds.value)
+    ;(Array.isArray(dispatches) ? dispatches : []).forEach((dispatch) => {
+      trackSyncTask(dispatch)
     })
-    ElMessage.success(`批量获取信息完成（模拟），已刷新 ${refreshedCount} 条`)
+    ensureTaskStatusPolling()
+    await fetchGoogleAccounts()
+    const count = Array.isArray(dispatches) ? dispatches.length : selectedIds.length
+    ElMessage.success(`已提交批量刷新任务 ${count} 条`)
   } finally {
-    selectedRowIds.value.forEach((id) => {
+    selectedIds.forEach((id) => {
       rowRefreshingMap[id] = false
     })
     batchRefreshing.value = false
@@ -383,7 +445,13 @@ function handleImportClear() {
   resetGoogleImportForm()
 }
 
-onMounted(fetchGoogleAccounts)
+onMounted(() => {
+  fetchGoogleAccounts()
+})
+
+onBeforeUnmount(() => {
+  stopTaskStatusPolling()
+})
 </script>
 
 <template>
@@ -502,6 +570,7 @@ onMounted(fetchGoogleAccounts)
                   class="icon-op-btn icon-op-btn--refresh"
                   :icon="RefreshRight"
                   :loading="isRowRefreshing(row.id)"
+                  :disabled="isRowRefreshing(row.id)"
                   @click.stop="handleRefreshInfo(row)"
                 />
               </el-tooltip>

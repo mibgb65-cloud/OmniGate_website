@@ -1,0 +1,1 @@
+﻿# ChatGPT auth module
