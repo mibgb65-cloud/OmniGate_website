@@ -6,7 +6,28 @@ import pinia from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 
 const SUCCESS_CODE = 200
-const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+
+function normalizeApiBaseURL(value) {
+  const rawValue = String(value || '').trim()
+  if (!rawValue) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    try {
+      const parsedUrl = new URL(rawValue)
+      parsedUrl.pathname = parsedUrl.pathname.replace(/\/api\/?$/, '/') || '/'
+      return parsedUrl.toString().replace(/\/$/, '')
+    } catch {
+      return rawValue
+    }
+  }
+
+  const normalizedValue = rawValue.replace(/\/api\/?$/, '')
+  return normalizedValue === '/' ? '' : normalizedValue
+}
+
+const baseURL = normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL)
 
 const service = axios.create({
   baseURL,
