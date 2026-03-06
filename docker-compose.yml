@@ -1,0 +1,132 @@
+services:
+  frontend:
+    build:
+      context: ./omnigate_frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+        VITE_TASK_LOG_WS_URL: ${FRONTEND_TASK_LOG_WS_URL:-/ws/task-log}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_BIND_HOST:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
+    networks:
+      - omnigate
+
+  backend:
+    build:
+      context: ./omnigate_backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      JAVA_OPTS: ${JAVA_OPTS:-}
+      OMNIGATE_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-omnigate}
+      OMNIGATE_DB_USERNAME: ${POSTGRES_USER:-omnigate}
+      OMNIGATE_DB_PASSWORD: ${POSTGRES_PASSWORD:-ChangeThisPostgresPassword}
+      OMNIGATE_REDIS_HOST: redis
+      OMNIGATE_REDIS_PORT: 6379
+      OMNIGATE_REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      OMNIGATE_REDIS_PASSWORD: ""
+      OMNIGATE_JWT_SECRET: ${OMNIGATE_JWT_SECRET:-ChangeThisJwtSecretAtLeast32Chars}
+      OMNIGATE_JWT_ACCESS_EXPIRE_MINUTES: ${OMNIGATE_JWT_ACCESS_EXPIRE_MINUTES:-30}
+      OMNIGATE_JWT_REFRESH_EXPIRE_DAYS: ${OMNIGATE_JWT_REFRESH_EXPIRE_DAYS:-7}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS http://127.0.0.1:8080/ > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    expose:
+      - "8080"
+    networks:
+      - omnigate
+
+  worker:
+    build:
+      context: ./omnigate_worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      WORKER_INSTANCE_ID: ${WORKER_INSTANCE_ID:-worker-1}
+      REDIS_URL: redis://redis:6379/${REDIS_DATABASE:-0}
+      POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-omnigate}:${POSTGRES_PASSWORD:-ChangeThisPostgresPassword}@postgres:5432/${POSTGRES_DB:-omnigate}
+      TASK_STREAM: ${TASK_STREAM:-task_stream}
+      TASK_LOG_STREAM: ${TASK_LOG_STREAM:-task_log_stream}
+      TASK_STREAM_GROUP: ${TASK_STREAM_GROUP:-worker_group}
+      TASK_STREAM_BLOCK_MS: ${TASK_STREAM_BLOCK_MS:-2000}
+      TASK_STREAM_READ_COUNT: ${TASK_STREAM_READ_COUNT:-10}
+      TASK_STREAM_CLAIM_IDLE_MS: ${TASK_STREAM_CLAIM_IDLE_MS:-60000}
+      TASK_STREAM_CLAIM_COUNT: ${TASK_STREAM_CLAIM_COUNT:-10}
+      TASK_STREAM_CLAIM_INTERVAL_MS: ${TASK_STREAM_CLAIM_INTERVAL_MS:-3000}
+      TASK_LOG_STREAM_MAXLEN: ${TASK_LOG_STREAM_MAXLEN:-10000}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
+      WORKER_MAX_CONCURRENCY_LIMIT: ${WORKER_MAX_CONCURRENCY_LIMIT:-10}
+      HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-30}
+      RETRY_MAX_ATTEMPTS: ${RETRY_MAX_ATTEMPTS:-3}
+      RETRY_DELAY_SECONDS: ${RETRY_DELAY_SECONDS:-10}
+      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-true}
+      BROWSER_SANDBOX: ${BROWSER_SANDBOX:-false}
+      BROWSER_ARGS: ${BROWSER_ARGS:---disable-dev-shm-usage,--no-first-run,--disable-gpu,--disable-software-rasterizer}
+      BROWSER_PROXY: ${BROWSER_PROXY:-}
+      BROWSER_USER_DATA_DIR: ${BROWSER_USER_DATA_DIR:-}
+    shm_size: ${WORKER_SHM_SIZE:-1gb}
+    networks:
+      - omnigate
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      POSTGRES_DB: ${POSTGRES_DB:-omnigate}
+      POSTGRES_USER: ${POSTGRES_USER:-omnigate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeThisPostgresPassword}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnigate} -d ${POSTGRES_DB:-omnigate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - omnigate
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - omnigate
+
+networks:
+  omnigate:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:

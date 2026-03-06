@@ -15,5 +15,9 @@ class SystemSettingsRepository:
             FROM system_settings
             WHERE key = ANY($1::varchar[])
         """
-        rows = await self._pool.fetch(query, keys)
+        try:
+            rows = await self._pool.fetch(query, keys)
+        except asyncpg.UndefinedTableError:
+            # Fresh deployments can hit the worker before backend migrations complete.
+            return {}
         return {row["key"]: row["value"] for row in rows}
