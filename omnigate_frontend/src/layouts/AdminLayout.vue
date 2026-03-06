@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, DataAnalysis, Key, Link, Monitor, User, UserFilled } from '@element-plus/icons-vue'
@@ -12,6 +12,8 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const isCollapse = ref(false)
+const isCompactViewport = ref(false)
+let compactViewportQuery
 
 const navItems = [
   {
@@ -97,8 +99,17 @@ const activeMenuPath = computed(() => {
   if (currentPath.startsWith('/dashboard')) return '/dashboard'
   return currentPath
 })
+const asideCollapsed = computed(() => isCompactViewport.value || isCollapse.value)
+const asideWidth = computed(() => (asideCollapsed.value ? '84px' : '258px'))
+
+function syncCompactViewport(event) {
+  isCompactViewport.value = Boolean(event?.matches ?? compactViewportQuery?.matches)
+}
 
 function toggleCollapse() {
+  if (isCompactViewport.value) {
+    return
+  }
   isCollapse.value = !isCollapse.value
 }
 
@@ -111,15 +122,44 @@ async function handleLogout() {
     ElMessage.success('已安全退出登录')
   }
 }
+
+onMounted(() => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return
+  }
+
+  compactViewportQuery = window.matchMedia('(max-width: 992px)')
+  syncCompactViewport(compactViewportQuery)
+
+  if (typeof compactViewportQuery.addEventListener === 'function') {
+    compactViewportQuery.addEventListener('change', syncCompactViewport)
+    return
+  }
+
+  compactViewportQuery.addListener(syncCompactViewport)
+})
+
+onBeforeUnmount(() => {
+  if (!compactViewportQuery) {
+    return
+  }
+
+  if (typeof compactViewportQuery.removeEventListener === 'function') {
+    compactViewportQuery.removeEventListener('change', syncCompactViewport)
+    return
+  }
+
+  compactViewportQuery.removeListener(syncCompactViewport)
+})
 </script>
 
 <template>
   <el-container class="admin-shell">
-    <el-aside :width="isCollapse ? '84px' : '258px'" class="admin-aside">
+    <el-aside :width="asideWidth" class="admin-aside">
       <div class="brand" @click="router.push('/dashboard')">
         <div class="brand-mark">OG</div>
         <transition name="fade">
-          <div v-show="!isCollapse" class="brand-copy">
+          <div v-show="!asideCollapsed" class="brand-copy">
             <h1>OmniGate</h1>
             <p>Admin Control</p>
           </div>
@@ -128,7 +168,7 @@ async function handleLogout() {
 
       <el-menu
         :default-active="activeMenuPath"
-        :collapse="isCollapse"
+        :collapse="asideCollapsed"
         :collapse-transition="false"
         router
         class="admin-menu"
@@ -139,7 +179,7 @@ async function handleLogout() {
         </el-menu-item>
       </el-menu>
 
-      <div class="aside-footer" v-if="!isCollapse">
+      <div class="aside-footer" v-if="!asideCollapsed">
         <div class="footer-card">
           <p>System Status</p>
           <div class="status-indicator">
@@ -152,7 +192,7 @@ async function handleLogout() {
 
     <el-container class="main-shell">
       <AdminHeader
-        :is-collapse="isCollapse"
+        :is-collapse="asideCollapsed"
         :breadcrumbs="breadcrumbs"
         :username="authStore.username"
         :role="authStore.role"
@@ -174,6 +214,7 @@ async function handleLogout() {
 <style scoped>
 .admin-shell {
   height: 100vh;
+  min-width: 0;
   background-color: #f4f6f8;
   padding: 12px;
   gap: 12px;
@@ -184,6 +225,7 @@ async function handleLogout() {
   border-radius: 16px;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   transition: width 0.3s ease;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -314,6 +356,7 @@ async function handleLogout() {
 }
 
 .main-shell {
+  min-width: 0;
   background: #ffffff;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
@@ -325,6 +368,8 @@ async function handleLogout() {
 .page-main {
   padding: 24px;
   background: #f4f6f8;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 

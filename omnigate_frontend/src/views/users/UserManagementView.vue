@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Lock, Plus, Refresh, Search } from '@element-plus/icons-vue'
 
@@ -35,9 +35,11 @@ const roleDialogLoading = ref(false)
 const statusUpdatingId = ref(null)
 const deletingId = ref(null)
 const roleOptions = ref([])
+const isCompactScreen = ref(false)
 
 const userFormRef = ref()
 const passwordFormRef = ref()
+let compactScreenQuery
 
 const queryForm = reactive({
   username: '',
@@ -164,6 +166,12 @@ const listSummary = computed(() => {
 
 const roleMap = computed(() => new Map(roleOptions.value.map((item) => [item.id, item])))
 const roleLoading = computed(() => roleCatalogLoading.value || roleDialogLoading.value)
+const paginationLayout = computed(() => (isCompactScreen.value ? 'prev, pager, next' : 'total, sizes, prev, pager, next'))
+const paginationPagerCount = computed(() => (isCompactScreen.value ? 5 : 7))
+const userDialogWidth = computed(() => (isCompactScreen.value ? 'calc(100vw - 24px)' : '720px'))
+const passwordDialogWidth = computed(() => (isCompactScreen.value ? 'calc(100vw - 24px)' : '460px'))
+const roleDialogWidth = computed(() => (isCompactScreen.value ? 'calc(100vw - 24px)' : '680px'))
+const detailDrawerSize = computed(() => (isCompactScreen.value ? '100%' : '480px'))
 
 function trimRequiredText(value) {
   return String(value || '').trim()
@@ -577,8 +585,36 @@ function formatDateTime(value, fallback = '-') {
   return value || fallback
 }
 
+function syncCompactScreen(event) {
+  isCompactScreen.value = Boolean(event?.matches ?? compactScreenQuery?.matches)
+}
+
 onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    compactScreenQuery = window.matchMedia('(max-width: 760px)')
+    syncCompactScreen(compactScreenQuery)
+
+    if (typeof compactScreenQuery.addEventListener === 'function') {
+      compactScreenQuery.addEventListener('change', syncCompactScreen)
+    } else {
+      compactScreenQuery.addListener(syncCompactScreen)
+    }
+  }
+
   fetchUsers()
+})
+
+onBeforeUnmount(() => {
+  if (!compactScreenQuery) {
+    return
+  }
+
+  if (typeof compactScreenQuery.removeEventListener === 'function') {
+    compactScreenQuery.removeEventListener('change', syncCompactScreen)
+    return
+  }
+
+  compactScreenQuery.removeListener(syncCompactScreen)
 })
 </script>
 
@@ -830,7 +866,9 @@ onMounted(() => {
           v-model:current-page="pager.current"
           v-model:page-size="pager.size"
           background
-          layout="total, sizes, prev, pager, next"
+          :layout="paginationLayout"
+          :pager-count="paginationPagerCount"
+          :small="isCompactScreen"
           :page-sizes="[10, 20, 50, 100]"
           :total="pager.total"
           @current-change="handleCurrentChange"
@@ -842,7 +880,7 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="formTitle"
-      width="720px"
+      :width="userDialogWidth"
       destroy-on-close
       @closed="handleDialogClosed"
     >
@@ -892,7 +930,7 @@ onMounted(() => {
     <el-dialog
       v-model="passwordDialogVisible"
       title="修改登录密码"
-      width="460px"
+      :width="passwordDialogWidth"
       destroy-on-close
       @closed="handlePasswordDialogClosed"
     >
@@ -942,7 +980,7 @@ onMounted(() => {
     <el-dialog
       v-model="roleDialogVisible"
       title="分配角色"
-      width="680px"
+      :width="roleDialogWidth"
       destroy-on-close
       @closed="handleRoleDialogClosed"
     >
@@ -990,7 +1028,7 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-drawer v-model="detailVisible" size="480px" :with-header="false">
+    <el-drawer v-model="detailVisible" :size="detailDrawerSize" :with-header="false">
       <div class="detail-panel" v-loading="detailLoading">
         <template v-if="currentUserDetail">
           <div class="detail-hero">
@@ -1075,6 +1113,34 @@ onMounted(() => {
   --user-accent: #108c6c;
   display: grid;
   gap: 18px;
+}
+
+.page-shell,
+.page-shell > *,
+.hero-card,
+.hero-copy,
+.hero-side,
+.workspace-card,
+.workspace-card :deep(.el-card__body),
+.workspace-head,
+.workspace-head > div,
+.control-strip,
+.query-form,
+.active-filters,
+.desktop-list,
+.mobile-list,
+.user-card,
+.user-card-head,
+.user-card-body,
+.user-card-foot,
+.role-column,
+.status-cell,
+.activity-cell,
+.action-cluster,
+.detail-panel,
+.detail-card,
+.detail-grid {
+  min-width: 0;
 }
 
 .hero-card {
@@ -1407,6 +1473,13 @@ onMounted(() => {
 .pagination-wrap {
   display: flex;
   justify-content: flex-end;
+}
+
+.pagination-wrap :deep(.el-pagination) {
+  width: 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 8px;
 }
 
 .user-card {
@@ -1766,12 +1839,37 @@ onMounted(() => {
 
   .hero-actions,
   .pagination-wrap {
-    justify-content: stretch;
+    justify-content: flex-start;
   }
 
   .hero-actions :deep(.el-button),
   .query-form .actions :deep(.el-button) {
-    flex: 1;
+    flex: 1 1 100%;
+  }
+
+  .query-form .actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .pagination-wrap :deep(.el-pagination) {
+    justify-content: flex-start;
+  }
+
+  .dialog-footer {
+    flex-wrap: wrap;
+  }
+
+  .dialog-footer :deep(.el-button) {
+    flex: 1 1 100%;
+  }
+
+  .detail-hero {
+    flex-direction: column;
+  }
+
+  .role-card-head {
+    flex-wrap: wrap;
   }
 
   .row-actions {
