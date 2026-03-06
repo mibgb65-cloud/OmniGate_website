@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/Status-Active%20Development-2563eb" alt="Active Development" />
   <img src="https://img.shields.io/badge/Architecture-Modular%20Monolith-0f766e" alt="Modular Monolith" />
   <img src="https://img.shields.io/badge/Worker-Redis%20Stream-8b5cf6" alt="Redis Stream Worker" />
-  <img src="https://img.shields.io/badge/License-Not%20Specified-lightgrey" alt="License Not Specified" />
+  <img src="https://img.shields.io/badge/License-MIT-f59e0b" alt="MIT License" />
 </p>
 
 </div>
@@ -326,6 +326,14 @@ python -m src.main
 - 提供更标准的测试与 CI 流程
 - 增加 HTTPS / 反向代理生产模板
 
+## TODO
+
+- [ ] 补齐 ChatGPT 与 GitHub 模块的最小可用任务链路
+- [ ] 为前端、后端、Worker 增加基础自动化测试
+- [ ] 为 Docker 部署补充生产环境 HTTPS 示例配置
+- [ ] 增加任务失败重试、告警与运行指标说明
+- [ ] 完善示例环境变量、部署脚本和运维排障文档
+
 ## Contributing
 
 欢迎提 Issue 或 Pull Request。提交前建议至少完成：
@@ -349,5 +357,4 @@ python -m src.main
 
 ## License
 
-当前仓库尚未提供 `LICENSE` 文件。  
-如果你打算以开源项目形式对外发布，建议补充明确的开源许可证后再公开分发。
+本项目基于 MIT License 开源发布，详情见 [LICENSE](./LICENSE)。
