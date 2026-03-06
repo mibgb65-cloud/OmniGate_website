@@ -134,10 +134,29 @@ ensure_env_file() {
 }
 
 load_env() {
-  set -a
-  # shellcheck disable=SC1090
-  source "${ENV_FILE}"
-  set +a
+  local line key value
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+
+    [[ "${line}" == export\ * ]] && line="${line#export }"
+    [[ "${line}" == *=* ]] || continue
+
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+
+    if [[ "${value}" =~ ^\".*\"$ ]] || [[ "${value}" =~ ^\'.*\'$ ]]; then
+      value="${value:1:-1}"
+    fi
+
+    export "${key}=${value}"
+  done < "${ENV_FILE}"
 
   : "${FRONTEND_BIND_HOST:=0.0.0.0}"
   : "${FRONTEND_PORT:=80}"
@@ -148,11 +167,13 @@ load_env() {
 }
 
 validate_env_secrets() {
-  grep -Eq '^POSTGRES_PASSWORD=ChangeThisPostgresPassword$' "${ENV_FILE}" \
-    && fail ".env 中仍在使用默认 POSTGRES_PASSWORD，请修改后再部署。"
+  if grep -Eq '^POSTGRES_PASSWORD=ChangeThisPostgresPassword$' "${ENV_FILE}"; then
+    fail ".env 中仍在使用默认 POSTGRES_PASSWORD，请修改后再部署。"
+  fi
 
-  grep -Eq '^OMNIGATE_JWT_SECRET=ChangeThisJwtSecretAtLeast32Chars$' "${ENV_FILE}" \
-    && fail ".env 中仍在使用默认 OMNIGATE_JWT_SECRET，请修改后再部署。"
+  if grep -Eq '^OMNIGATE_JWT_SECRET=ChangeThisJwtSecretAtLeast32Chars$' "${ENV_FILE}"; then
+    fail ".env 中仍在使用默认 OMNIGATE_JWT_SECRET，请修改后再部署。"
+  fi
 }
 
 is_true() {
