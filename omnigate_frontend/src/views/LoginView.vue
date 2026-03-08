@@ -24,18 +24,6 @@ const formRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-const highlights = [
-  { value: '3', label: '核心账号域统一管理' },
-  { value: '2FA', label: '安全工具辅助支持' },
-  { value: '20s', label: '请求超时兜底机制' },
-]
-
-const featureList = [
-  '统一进入 Google、GitHub、ChatGPT 账号池，减少多入口切换。',
-  '访问受保护页面时会自动记住目标地址，登录后直接继续当前任务。',
-  'Access Token 失效后会自动尝试刷新，降低重复登录打断。',
-]
-
 const redirectPath = computed(() => (typeof route.query.redirect === 'string' ? route.query.redirect : ''))
 
 const nextDestination = computed(() => {
@@ -71,25 +59,24 @@ const nextDestination = computed(() => {
   return '刚才访问的页面'
 })
 
-const statusNotice = computed(() => {
-  if (loading.value) {
-    return '正在验证身份并建立安全会话，请稍候。'
-  }
-
-  if (nextDestination.value) {
-    return `登录后将自动跳转到${nextDestination.value}。`
-  }
-
-  return '支持用户名或邮箱登录，密码区分大小写。'
-})
-
-const loginTips = computed(() => [
-  '登录账号支持用户名或邮箱，两者都会按同一接口校验。',
-  '密码区分大小写，输入完成后可直接按回车提交。',
+const panelCaption = computed(() => (
   nextDestination.value
-    ? `当前会话会在认证完成后恢复到${nextDestination.value}。`
-    : '如果你是从业务页跳转而来，系统会尽量恢复你刚才的目标页面。',
-])
+    ? `登录后返回${nextDestination.value}`
+    : '统一控制台入口'
+))
+
+const formCaption = computed(() => (
+  nextDestination.value
+    ? `继续前往${nextDestination.value}`
+    : '输入账号继续'
+))
+
+const statusText = computed(() => {
+  if (errorMessage.value) return errorMessage.value
+  if (loading.value) return '正在验证身份'
+  if (nextDestination.value) return `认证成功后将直达${nextDestination.value}`
+  return '支持用户名或邮箱登录'
+})
 
 watch(
   [() => formModel.loginAccount, () => formModel.password],
@@ -126,487 +113,490 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="login-page">
-    <div class="ambient ambient-one" />
-    <div class="ambient ambient-two" />
+  <main class="login-page">
+    <div class="ambient" aria-hidden="true">
+      <span class="ambient-blur blur-left" />
+      <span class="ambient-blur blur-right" />
+      <span class="ambient-line line-left" />
+      <span class="ambient-line line-right" />
+    </div>
 
-    <section class="login-shell">
-      <aside class="login-showcase" aria-label="OmniGate 系统介绍">
-        <div class="showcase-block">
-          <span class="eyebrow">OmniGate Admin</span>
-          <h1>统一入口，快速回到你要处理的账号任务。</h1>
-          <p>
-            登录页改为左右分栏后，左侧负责传达系统价值与状态，右侧只专注完成登录动作，减少进入后台前的认知负担。
-          </p>
-        </div>
-
-        <div class="showcase-grid">
-          <article v-for="item in highlights" :key="item.label" class="metric-card">
-            <strong>{{ item.value }}</strong>
-            <span>{{ item.label }}</span>
-          </article>
-        </div>
-
-        <div class="showcase-card">
-          <span class="card-label">进入后可以直接做什么</span>
-          <ul class="showcase-list">
-            <li v-for="item in featureList" :key="item">
-              {{ item }}
-            </li>
-          </ul>
-        </div>
-      </aside>
-
-      <section class="login-panel">
-        <header class="login-header">
-          <span class="panel-tag">安全登录</span>
-          <h2>欢迎回来</h2>
-          <p>输入系统账号后继续访问 OmniGate 控制台。</p>
-        </header>
-
-        <div
-          class="status-card"
-          :class="{ 'is-error': errorMessage }"
-          :role="errorMessage ? 'alert' : 'status'"
-          aria-live="polite"
-        >
-          <strong>{{ errorMessage ? '登录未完成' : '登录提示' }}</strong>
-          <span>{{ errorMessage || statusNotice }}</span>
-        </div>
-
-        <el-form
-          ref="formRef"
-          :model="formModel"
-          :rules="formRules"
-          class="login-form"
-          label-position="top"
-          @submit.prevent
-        >
-          <el-form-item label="登录账号" prop="loginAccount">
-            <el-input
-              v-model="formModel.loginAccount"
-              placeholder="请输入用户名或邮箱"
-              :prefix-icon="User"
-              size="large"
-              clearable
-              autocomplete="username"
-              @keyup.enter="handleSubmit"
-            />
-            <p class="field-hint">支持用户名或邮箱两种格式，建议使用你最常用的一种。</p>
-          </el-form-item>
-
-          <el-form-item label="登录密码" prop="password">
-            <el-input
-              v-model="formModel.password"
-              type="password"
-              placeholder="请输入密码"
-              :prefix-icon="Lock"
-              show-password
-              size="large"
-              autocomplete="current-password"
-              @keyup.enter="handleSubmit"
-            />
-            <p class="field-hint">密码区分大小写，按回车也可以直接提交。</p>
-          </el-form-item>
-
-          <el-button class="submit-button" type="primary" size="large" :loading="loading" @click="handleSubmit">
-            安全登录
-          </el-button>
-        </el-form>
-
-        <div class="tips-section">
-          <div class="tips-header">
-            <span>登录提示</span>
-            <span v-if="nextDestination">{{ nextDestination }}</span>
+    <section class="login-scene">
+      <section class="brand-stage" aria-label="OmniGate 登录入口">
+        <div class="brand-topline">
+          <div class="brand-signature">
+            <span class="brand-mark">OG</span>
+            <div class="brand-copy">
+              <strong>OmniGate</strong>
+              <span>Private Access</span>
+            </div>
           </div>
-          <ul class="tips-list">
-            <li v-for="tip in loginTips" :key="tip">
-              {{ tip }}
-            </li>
-          </ul>
+        </div>
+
+        <div class="stage-copy">
+          <span class="eyebrow">Enterprise Login</span>
+          <h1>OmniGate</h1>
+          <p>{{ panelCaption }}</p>
+        </div>
+
+        <div class="platform-ribbon" aria-label="支持平台">
+          <span>Google</span>
+          <span>GitHub</span>
+          <span>ChatGPT</span>
+        </div>
+      </section>
+
+      <section class="login-column" aria-label="登录表单">
+        <div class="form-shell">
+          <header class="login-header">
+            <p class="login-kicker">Secure sign in</p>
+            <h2>登录</h2>
+            <p class="login-subtitle">{{ formCaption }}</p>
+          </header>
+
+          <div
+            class="status-note"
+            :class="{ 'is-error': errorMessage, 'is-loading': loading }"
+            :role="errorMessage ? 'alert' : 'status'"
+            aria-live="polite"
+          >
+            {{ statusText }}
+          </div>
+
+          <el-form
+            ref="formRef"
+            :model="formModel"
+            :rules="formRules"
+            class="login-form"
+            label-position="top"
+            @submit.prevent="handleSubmit"
+          >
+            <el-form-item label="登录账号" prop="loginAccount" class="field-item">
+              <el-input
+                v-model.trim="formModel.loginAccount"
+                placeholder="用户名或邮箱"
+                :prefix-icon="User"
+                size="large"
+                clearable
+                autocomplete="username"
+                @keyup.enter="handleSubmit"
+              />
+            </el-form-item>
+
+            <el-form-item label="登录密码" prop="password" class="field-item">
+              <el-input
+                v-model="formModel.password"
+                type="password"
+                placeholder="输入密码"
+                :prefix-icon="Lock"
+                show-password
+                size="large"
+                autocomplete="current-password"
+                @keyup.enter="handleSubmit"
+              />
+            </el-form-item>
+
+            <el-button class="submit-button" type="primary" size="large" native-type="submit" :loading="loading">
+              {{ loading ? '正在验证' : '进入控制台' }}
+            </el-button>
+          </el-form>
         </div>
       </section>
     </section>
-  </div>
+  </main>
 </template>
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
+  --login-bg: #f8fafc;
+  --login-surface: rgba(255, 255, 255, 0.88);
+  --login-border: rgba(15, 23, 42, 0.1);
+  --login-ink: #020617;
+  --login-ink-soft: #0f172a;
+  --login-muted: #475569;
+  --login-muted-soft: #64748b;
+  --login-accent: #0369a1;
+  --login-danger: #b42318;
+
   position: relative;
+  min-height: 100vh;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(16px, 4vw, 40px);
+  padding: clamp(16px, 3vw, 36px);
   background:
-    linear-gradient(115deg, #111b22 0%, #17323d 44%, #eef3f3 44%, #f8fbfa 100%);
+    radial-gradient(circle at 0% 0%, rgba(14, 116, 144, 0.08), transparent 28%),
+    radial-gradient(circle at 100% 0%, rgba(15, 23, 42, 0.08), transparent 30%),
+    linear-gradient(140deg, #f8fafc 0%, #eef3f8 52%, #f6f8fb 100%);
 }
 
 .ambient {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(12px);
+  inset: 0;
   pointer-events: none;
 }
 
-.ambient-one {
-  width: 420px;
-  height: 420px;
-  top: -150px;
-  left: -120px;
-  background: rgba(18, 161, 115, 0.24);
+.ambient-blur,
+.ambient-line {
+  position: absolute;
 }
 
-.ambient-two {
-  width: 360px;
-  height: 360px;
-  right: -120px;
-  bottom: -100px;
-  background: rgba(24, 46, 64, 0.18);
+.ambient-blur {
+  border-radius: 999px;
+  filter: blur(16px);
 }
 
-.login-shell {
+.blur-left {
+  width: 280px;
+  height: 280px;
+  left: -80px;
+  top: -100px;
+  background: rgba(3, 105, 161, 0.12);
+}
+
+.blur-right {
+  width: 340px;
+  height: 340px;
+  right: -110px;
+  bottom: -120px;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.ambient-line {
+  width: 1px;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.08), transparent);
+}
+
+.line-left {
+  left: 14%;
+}
+
+.line-right {
+  right: 12%;
+}
+
+.login-scene {
   position: relative;
   z-index: 1;
-  width: min(1180px, 100%);
-  min-height: min(760px, calc(100vh - 48px));
+  width: min(1120px, 100%);
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-  border-radius: 30px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 30px 80px rgba(10, 18, 27, 0.2);
-  backdrop-filter: blur(18px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  gap: clamp(20px, 4vw, 52px);
+  align-items: center;
 }
 
-.login-showcase,
-.login-panel {
+.brand-stage {
   position: relative;
-  padding: clamp(28px, 4vw, 48px);
-}
-
-.login-showcase {
+  min-height: min(640px, calc(100vh - 88px));
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 28px;
-  color: #f3f8f8;
+  padding: clamp(24px, 4vw, 44px);
+  border-radius: 40px;
+  color: #f8fafc;
+  overflow: hidden;
   background:
-    radial-gradient(circle at 18% 20%, rgba(18, 161, 115, 0.18), transparent 28%),
-    radial-gradient(circle at 86% 24%, rgba(255, 255, 255, 0.09), transparent 20%),
-    linear-gradient(160deg, rgba(15, 24, 31, 0.95), rgba(17, 43, 54, 0.92));
+    radial-gradient(circle at 20% 18%, rgba(56, 189, 248, 0.18), transparent 22%),
+    radial-gradient(circle at 86% 18%, rgba(255, 255, 255, 0.1), transparent 18%),
+    linear-gradient(145deg, #0f172a 0%, #111827 50%, #0b1220 100%);
+  box-shadow:
+    0 30px 70px rgba(15, 23, 42, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.eyebrow,
-.panel-tag,
-.card-label {
+.brand-stage::after {
+  content: 'OG';
+  position: absolute;
+  right: 28px;
+  bottom: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(7rem, 16vw, 12rem);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.08em;
+  color: rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+.brand-topline {
+  display: flex;
+  align-items: center;
+}
+
+.brand-signature {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-mark {
+  width: 50px;
+  height: 50px;
   display: inline-flex;
   align-items: center;
-  width: fit-content;
-  border-radius: 999px;
-  font-size: 0.74rem;
+  justify-content: center;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-copy strong {
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+}
+
+.brand-copy span {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.64);
+}
+
+.stage-copy {
+  display: grid;
+  gap: 14px;
 }
 
 .eyebrow {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
   padding: 7px 12px;
-  color: #dff8ee;
-  border: 1px solid rgba(223, 248, 238, 0.18);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.showcase-block h1 {
-  margin: 18px 0 0;
-  max-width: 10ch;
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(2.3rem, 4vw, 4.2rem);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
-}
-
-.showcase-block p {
-  max-width: 39ch;
-  margin: 18px 0 0;
-  font-size: 1rem;
-  line-height: 1.7;
-  color: rgba(243, 248, 248, 0.78);
-}
-
-.showcase-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.metric-card {
-  display: grid;
-  gap: 8px;
-  padding: 18px 16px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.84);
 }
 
-.metric-card strong {
+.stage-copy h1 {
+  margin: 0;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(1.5rem, 2.2vw, 2rem);
-  letter-spacing: -0.04em;
+  font-size: clamp(3rem, 5vw, 5rem);
+  line-height: 0.92;
+  letter-spacing: -0.06em;
 }
 
-.metric-card span {
-  color: rgba(243, 248, 248, 0.76);
-  line-height: 1.5;
+.stage-copy p {
+  margin: 0;
+  font-size: 1rem;
+  color: rgba(248, 250, 252, 0.72);
 }
 
-.showcase-card {
-  padding: 22px 22px 24px;
-  border-radius: 26px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.07));
-  border: 1px solid rgba(255, 255, 255, 0.14);
-}
-
-.card-label {
-  padding: 6px 10px;
-  color: rgba(223, 248, 238, 0.92);
-  background: rgba(18, 161, 115, 0.14);
-  border: 1px solid rgba(18, 161, 115, 0.2);
-}
-
-.showcase-list {
-  list-style: none;
-  margin: 18px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 14px;
-}
-
-.showcase-list li {
-  position: relative;
-  padding-left: 18px;
-  color: rgba(243, 248, 248, 0.84);
-  line-height: 1.7;
-}
-
-.showcase-list li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.72em;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #6de6b8;
-  box-shadow: 0 0 0 6px rgba(109, 230, 184, 0.12);
-}
-
-.login-panel {
+.platform-ribbon {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 249, 0.96));
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.platform-ribbon span {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(248, 250, 252, 0.82);
+  font-size: 0.84rem;
+}
+
+.login-column {
+  width: 100%;
+}
+
+.form-shell {
+  padding: clamp(22px, 3vw, 30px);
+  border-radius: 32px;
+  border: 1px solid var(--login-border);
+  background: var(--login-surface);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 22px 50px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .login-header {
-  margin-bottom: 22px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 
-.panel-tag {
-  padding: 7px 12px;
-  color: var(--og-emerald-700);
-  background: rgba(18, 161, 115, 0.1);
-  border: 1px solid rgba(18, 161, 115, 0.18);
+.login-kicker {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--login-accent);
 }
 
 .login-header h2 {
-  margin: 14px 0 0;
+  margin: 0;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(2rem, 2vw, 2.5rem);
-  letter-spacing: -0.04em;
-  color: var(--og-slate-900);
+  font-size: clamp(2rem, 2.4vw, 2.5rem);
+  letter-spacing: -0.05em;
+  color: var(--login-ink);
 }
 
-.login-header p {
-  margin: 10px 0 0;
-  color: var(--og-slate-600);
-  font-size: 0.96rem;
-  line-height: 1.7;
+.login-subtitle {
+  margin: 0;
+  color: var(--login-muted);
+  font-size: 0.94rem;
 }
 
-.status-card {
-  display: grid;
-  gap: 6px;
-  padding: 15px 16px;
-  margin-bottom: 22px;
-  border-radius: 18px;
-  background: rgba(18, 161, 115, 0.08);
-  border: 1px solid rgba(18, 161, 115, 0.14);
+.status-note {
+  min-height: 20px;
+  margin-bottom: 18px;
+  color: var(--login-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
 }
 
-.status-card strong {
-  color: var(--og-slate-900);
-  font-size: 0.92rem;
+.status-note.is-loading {
+  color: var(--login-accent);
 }
 
-.status-card span {
-  color: var(--og-slate-700);
-  line-height: 1.6;
+.status-note.is-error {
+  color: var(--login-danger);
 }
 
-.status-card.is-error {
-  background: rgba(186, 62, 62, 0.08);
-  border-color: rgba(186, 62, 62, 0.16);
-}
-
-.status-card.is-error strong,
-.status-card.is-error span {
-  color: #8f3131;
+.field-item {
+  margin-bottom: 18px;
 }
 
 .login-form :deep(.el-form-item__label) {
   padding-bottom: 8px;
   font-weight: 700;
-  color: var(--og-slate-700);
-}
-
-.login-form :deep(.el-form-item) {
-  margin-bottom: 20px;
+  color: var(--login-ink-soft);
+  letter-spacing: 0.01em;
 }
 
 .login-form :deep(.el-input__wrapper) {
-  min-height: 52px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  min-height: 56px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
   box-shadow:
-    0 0 0 1px rgba(27, 40, 54, 0.1) inset,
-    0 12px 24px rgba(15, 28, 39, 0.05);
+    0 0 0 1px rgba(15, 23, 42, 0.12) inset,
+    0 10px 24px rgba(15, 23, 42, 0.04);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.18) inset,
+    0 12px 26px rgba(15, 23, 42, 0.06);
 }
 
 .login-form :deep(.el-input__wrapper.is-focus) {
   box-shadow:
-    0 0 0 1.5px rgba(18, 161, 115, 0.55) inset,
-    0 14px 26px rgba(18, 161, 115, 0.12);
+    0 0 0 2px rgba(3, 105, 161, 0.22) inset,
+    0 0 0 4px rgba(3, 105, 161, 0.12),
+    0 14px 28px rgba(3, 105, 161, 0.12);
 }
 
-.field-hint {
-  margin: 8px 2px 0;
-  font-size: 0.84rem;
-  line-height: 1.5;
-  color: var(--og-slate-500);
+.login-form :deep(.el-input__prefix) {
+  margin-right: 10px;
+  color: var(--login-muted-soft);
+}
+
+.login-form :deep(.el-input__inner) {
+  height: 44px;
+  color: var(--login-ink);
+  font-size: 1rem;
+}
+
+.login-form :deep(.el-input__inner::placeholder) {
+  color: #7b8794;
+}
+
+.login-form :deep(.el-form-item__error) {
+  position: static;
+  margin-top: 8px;
 }
 
 .submit-button {
   width: 100%;
-  height: 50px;
-  margin-top: 8px;
+  height: 56px;
+  margin-top: 6px;
   border: none;
-  border-radius: 16px;
-  font-size: 1rem;
+  border-radius: 999px;
+  font-size: 0.96rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--og-emerald-500), #1b8d83);
-  box-shadow: 0 18px 32px rgba(18, 161, 115, 0.22);
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  box-shadow:
+    0 18px 34px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
 }
 
 .submit-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 20px 36px rgba(18, 161, 115, 0.28);
-}
-
-.tips-section {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(27, 40, 54, 0.08);
-}
-
-.tips-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tips-header span:first-child {
-  font-weight: 700;
-  color: var(--og-slate-800);
-}
-
-.tips-header span:last-child {
-  padding: 5px 10px;
-  border-radius: 999px;
-  color: var(--og-emerald-700);
-  background: rgba(18, 161, 115, 0.08);
-  font-size: 0.82rem;
-}
-
-.tips-list {
-  list-style: none;
-  margin: 16px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 12px;
-}
-
-.tips-list li {
-  position: relative;
-  padding-left: 16px;
-  color: var(--og-slate-600);
-  line-height: 1.65;
-}
-
-.tips-list li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.72em;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--og-emerald-500);
-  box-shadow: 0 0 0 5px rgba(18, 161, 115, 0.09);
+  box-shadow:
+    0 20px 38px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 980px) {
-  .login-shell {
-    min-height: auto;
+  .login-scene {
     grid-template-columns: 1fr;
   }
 
-  .showcase-block h1 {
-    max-width: 12ch;
+  .brand-stage {
+    min-height: 260px;
   }
 }
 
 @media (max-width: 640px) {
   .login-page {
     padding: 14px;
-    background:
-      linear-gradient(180deg, #111b22 0%, #17323d 28%, #eef3f3 28%, #f8fbfa 100%);
   }
 
-  .login-shell {
-    border-radius: 24px;
+  .brand-stage {
+    min-height: 220px;
+    padding: 20px;
+    border-radius: 28px;
   }
 
-  .login-showcase,
-  .login-panel {
-    padding: 24px 18px;
+  .form-shell {
+    padding: 20px 16px;
+    border-radius: 26px;
   }
 
-  .showcase-grid {
-    grid-template-columns: 1fr;
+  .stage-copy h1 {
+    font-size: clamp(2.4rem, 12vw, 3.4rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-form :deep(.el-input__wrapper),
+  .submit-button {
+    transition: none;
   }
 
-  .showcase-block h1 {
-    max-width: none;
-  }
-
-  .tips-header {
-    flex-direction: column;
-    align-items: flex-start;
+  .submit-button:hover {
+    transform: none;
   }
 }
 </style>
