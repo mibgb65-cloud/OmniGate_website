@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import asyncpg
 
@@ -22,6 +23,7 @@ LOG_PREFIX = "[Worker节点]"
 
 class WorkerNode:
     FEATURE_SYNC_ACTION = "get_google_account_feature_by_account_id"
+    CHATGPT_BATCH_REGISTER_ACTION = "batch_register_chatgpt_accounts"
     ACCOUNT_SYNC_STATUS_WAITING = 1
     ACCOUNT_SYNC_STATUS_RUNNING = 2
     ACCOUNT_SYNC_STATUS_SUCCESS = 3
@@ -44,6 +46,7 @@ class WorkerNode:
         self._stop_event = asyncio.Event()
         self._active_tasks: set[asyncio.Task[None]] = set()
         self._retry_enqueue_tasks: set[asyncio.Task[None]] = set()
+        self._serial_execution_locks: dict[str, asyncio.Lock] = {}
         self._semaphore: asyncio.Semaphore | None = None
         self._runtime: WorkerRuntimeSettings | None = None
         self._pending_claim_cursor: str = "0-0"
@@ -178,109 +181,191 @@ class WorkerNode:
             await self._ack_message(message)
 
     async def _handle_task(self, *, task_run_id: UUID, message: TaskStreamMessage) -> None:
-        if not await self._state_manager.mark_running(task_run_id, self._settings.worker_instance_id):
-            logger.info("%s 任务状态不是 queued，跳过执行 | task_run_id=%s", LOG_PREFIX, task_run_id)
-            return
-
         task_record = await self._state_manager.get_task_run(task_run_id)
         if task_record is None:
             logger.error("%s 未找到 task_runs 记录 | task_run_id=%s", LOG_PREFIX, task_run_id)
             return
 
         task_payload = self._extract_task_payload(message.fields)
-        if not task_payload:
-            await self._state_manager.mark_failed_and_schedule_retry(
-                task_run_id=task_run_id,
-                error_code="INVALID_PAYLOAD",
-                error_message="Missing or invalid payload in task stream message",
-                last_checkpoint="decode_payload",
-                retry_delay_seconds=0,
-                retry_max_attempts=task_record.attempt_no,
-            )
+        async with self._task_execution_lock(task_payload):
+            if not await self._state_manager.mark_running(task_run_id, self._settings.worker_instance_id):
+                logger.info("%s 任务状态不是 queued，跳过执行 | task_run_id=%s", LOG_PREFIX, task_run_id)
+                return
+
+            if not task_payload:
+                await self._state_manager.mark_failed_and_schedule_retry(
+                    task_run_id=task_run_id,
+                    error_code="INVALID_PAYLOAD",
+                    error_message="Missing or invalid payload in task stream message",
+                    last_checkpoint="decode_payload",
+                    retry_delay_seconds=0,
+                    retry_max_attempts=task_record.attempt_no,
+                )
+                return
+
+            if await self._state_manager.is_cancel_requested(task_run_id):
+                await self._state_manager.mark_cancelled(task_run_id, reason="Cancelled before execution")
+                await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
+                return
+
+            await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_RUNNING)
+            await self._heartbeat_service.start(task_run_id)
+            try:
+                task = create_task(
+                    task_payload=task_payload,
+                    task_id=str(task_run_id),
+                    worker_instance_id=self._settings.worker_instance_id,
+                    attempt_no=task_record.attempt_no,
+                    log_sink=self._build_task_log_sink(task_run_id=task_run_id, root_run_id=task_record.root_run_id),
+                    db_pool=self._db_pool,
+                )
+                biz_payload = task_payload.get("payload")
+                if not isinstance(biz_payload, dict):
+                    biz_payload = task_payload
+
+                result = await task.run(biz_payload)
+                status = str(result.get("status", "success")).lower() if isinstance(result, dict) else "success"
+
+                if status == "success":
+                    await self._state_manager.mark_success(task_run_id, last_checkpoint="finished")
+                    await self._enqueue_next_chatgpt_batch_task_if_needed(
+                        task_record=task_record,
+                        task_payload=task_payload,
+                    )
+                    await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_SUCCESS)
+                    return
+                if status == "cancelled":
+                    await self._state_manager.mark_cancelled(task_run_id, reason=result.get("error_message"))
+                    await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
+                    return
+                if status == "timeout":
+                    await self._state_manager.mark_timeout(task_run_id, reason=result.get("error_message"))
+                    await self._enqueue_next_chatgpt_batch_task_if_needed(
+                        task_record=task_record,
+                        task_payload=task_payload,
+                    )
+                    await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
+                    return
+
+                error_code = result.get("error_code") if isinstance(result, dict) else None
+                error_message = result.get("error_message") if isinstance(result, dict) else "Task returned failure status"
+                await self._mark_failed_and_schedule_retry(
+                    task_run_id=task_run_id,
+                    task_record=task_record,
+                    task_payload=task_payload,
+                    error_code=error_code,
+                    error_message=error_message,
+                    last_checkpoint="task_result_failed",
+                )
+            except asyncio.CancelledError:
+                await self._state_manager.mark_cancelled(task_run_id, reason="Task execution cancelled")
+                await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("%s 任务执行异常 | task_run_id=%s", LOG_PREFIX, task_run_id)
+                await self._mark_failed_and_schedule_retry(
+                    task_run_id=task_run_id,
+                    task_record=task_record,
+                    task_payload=task_payload,
+                    error_code="UNEXPECTED_ERROR",
+                    error_message=str(exc),
+                    last_checkpoint="task_exception",
+                )
+            finally:
+                await self._heartbeat_service.stop(task_run_id)
+
+    async def _enqueue_next_chatgpt_batch_task_if_needed(
+        self,
+        *,
+        task_record: Any,
+        task_payload: dict[str, Any],
+    ) -> None:
+        if str(task_payload.get("action") or "").strip() != self.CHATGPT_BATCH_REGISTER_ACTION:
             return
 
-        if await self._state_manager.is_cancel_requested(task_run_id):
-            await self._state_manager.mark_cancelled(task_run_id, reason="Cancelled before execution")
-            await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
+        biz_payload = task_payload.get("payload")
+        if not isinstance(biz_payload, dict):
             return
 
-        await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_RUNNING)
-        await self._heartbeat_service.start(task_run_id)
+        requested_count = self._safe_int(biz_payload.get("requested_count") or biz_payload.get("signup_count"))
+        current_index = self._safe_int(biz_payload.get("current_index"), fallback=1)
+        if requested_count <= current_index:
+            return
+
+        next_index = current_index + 1
+        next_task_run_id = uuid4()
+        next_payload = {
+            **task_payload,
+            "payload": {
+                **biz_payload,
+                "signup_count": 1,
+                "requested_count": requested_count,
+                "current_index": next_index,
+            },
+        }
+
+        await self._state_manager.create_task_run(
+            task_run_id=next_task_run_id,
+            root_run_id=task_record.root_run_id,
+            triggered_by=task_record.triggered_by,
+            input_payload=next_payload,
+            max_attempts=task_record.max_attempts,
+        )
+
+        created_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        fields = {
+            "task_run_id": str(next_task_run_id),
+            "root_run_id": str(task_record.root_run_id),
+            "payload": json.dumps(next_payload, separators=(",", ":"), ensure_ascii=False),
+            "created_at": created_at,
+        }
+
         try:
-            task = create_task(
-                task_payload=task_payload,
-                task_id=str(task_run_id),
-                worker_instance_id=self._settings.worker_instance_id,
-                attempt_no=task_record.attempt_no,
-                log_sink=self._build_task_log_sink(task_run_id=task_run_id, root_run_id=task_record.root_run_id),
-                db_pool=self._db_pool,
+            await self._stream_client.add_task_message(stream=self._settings.task_stream, fields=fields)
+        except Exception:  # noqa: BLE001
+            await self._state_manager.delete_task_run(next_task_run_id)
+            logger.exception(
+                "%s 串行投递下一条 ChatGPT 注册任务失败 | root_run_id=%s | next_task_run_id=%s | progress=%s/%s",
+                LOG_PREFIX,
+                task_record.root_run_id,
+                next_task_run_id,
+                next_index,
+                requested_count,
             )
-            biz_payload = task_payload.get("payload")
-            if not isinstance(biz_payload, dict):
-                biz_payload = task_payload
+            return
 
-            result = await task.run(biz_payload)
-            status = str(result.get("status", "success")).lower() if isinstance(result, dict) else "success"
-
-            if status == "success":
-                await self._state_manager.mark_success(task_run_id, last_checkpoint="finished")
-                await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_SUCCESS)
-                return
-            if status == "cancelled":
-                await self._state_manager.mark_cancelled(task_run_id, reason=result.get("error_message"))
-                await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
-                return
-            if status == "timeout":
-                await self._state_manager.mark_timeout(task_run_id, reason=result.get("error_message"))
-                await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
-                return
-
-            error_code = result.get("error_code") if isinstance(result, dict) else None
-            error_message = result.get("error_message") if isinstance(result, dict) else "Task returned failure status"
-            await self._mark_failed_and_schedule_retry(
-                task_run_id=task_run_id,
-                root_run_id=task_record.root_run_id,
-                task_payload=task_payload,
-                error_code=error_code,
-                error_message=error_message,
-                last_checkpoint="task_result_failed",
-            )
-        except asyncio.CancelledError:
-            await self._state_manager.mark_cancelled(task_run_id, reason="Task execution cancelled")
-            await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("%s 任务执行异常 | task_run_id=%s", LOG_PREFIX, task_run_id)
-            await self._mark_failed_and_schedule_retry(
-                task_run_id=task_run_id,
-                root_run_id=task_record.root_run_id,
-                task_payload=task_payload,
-                error_code="UNEXPECTED_ERROR",
-                error_message=str(exc),
-                last_checkpoint="task_exception",
-            )
-        finally:
-            await self._heartbeat_service.stop(task_run_id)
+        logger.info(
+            "%s 已串行投递下一条 ChatGPT 注册任务 | root_run_id=%s | next_task_run_id=%s | progress=%s/%s",
+            LOG_PREFIX,
+            task_record.root_run_id,
+            next_task_run_id,
+            next_index,
+            requested_count,
+        )
 
     async def _mark_failed_and_schedule_retry(
         self,
         *,
         task_run_id: UUID,
-        root_run_id: UUID,
+        task_record: Any,
         task_payload: dict[str, Any],
         error_code: str | None,
         error_message: str | None,
         last_checkpoint: str,
     ) -> None:
         next_run_id = await self._state_manager.mark_failed_and_schedule_retry(
-            task_run_id=task_run_id,
-            error_code=error_code,
-            error_message=error_message,
-            last_checkpoint=last_checkpoint,
-            retry_delay_seconds=self._retry_delay_seconds,
-            retry_max_attempts=self._retry_max_attempts,
-        )
+                task_run_id=task_run_id,
+                error_code=error_code,
+                error_message=error_message,
+                last_checkpoint=last_checkpoint,
+                retry_delay_seconds=self._retry_delay_seconds,
+                retry_max_attempts=self._retry_max_attempts,
+            )
         if next_run_id is None:
+            await self._enqueue_next_chatgpt_batch_task_if_needed(
+                task_record=task_record,
+                task_payload=task_payload,
+            )
             await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
             return
 
@@ -294,7 +379,7 @@ class WorkerNode:
         timer = asyncio.create_task(
             self._enqueue_retry_message_after_delay(
                 next_run_id=next_run_id,
-                root_run_id=root_run_id,
+                root_run_id=task_record.root_run_id,
                 task_payload=task_payload,
             )
         )
@@ -349,6 +434,20 @@ class WorkerNode:
 
         return sink
 
+    @asynccontextmanager
+    async def _task_execution_lock(self, task_payload: dict[str, Any]):
+        lock_key = self._serial_lock_key(task_payload)
+        if not lock_key:
+            yield
+            return
+
+        lock = self._serial_execution_locks.setdefault(lock_key, asyncio.Lock())
+        await lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+
     async def _ack_message(self, message: TaskStreamMessage) -> None:
         await self._stream_client.ack(
             stream=self._settings.task_stream,
@@ -400,6 +499,20 @@ class WorkerNode:
         if self._runtime is not None:
             return self._runtime.retry_max_attempts
         return self._settings.retry_max_attempts
+
+    def _serial_lock_key(self, task_payload: dict[str, Any]) -> str | None:
+        module = str(task_payload.get("module") or "").strip().lower()
+        action = str(task_payload.get("action") or "").strip().lower()
+        if module == "chatgpt" and action == self.CHATGPT_BATCH_REGISTER_ACTION:
+            return f"{module}:{action}"
+        return None
+
+    @staticmethod
+    def _safe_int(value: Any, fallback: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return fallback
 
     async def _sync_feature_status_if_needed(self, task_payload: dict[str, Any], sync_status: int) -> None:
         if str(task_payload.get("action") or "").strip() != self.FEATURE_SYNC_ACTION:

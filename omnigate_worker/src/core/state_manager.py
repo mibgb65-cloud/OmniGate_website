@@ -67,6 +67,26 @@ class TaskStateManager:
     async def get_task_run(self, task_run_id: UUID) -> TaskRunRecord | None:
         return await self._task_repo.get_task_run(task_run_id)
 
+    async def create_task_run(
+        self,
+        *,
+        task_run_id: UUID,
+        root_run_id: UUID,
+        triggered_by: str,
+        input_payload: dict,
+        max_attempts: int,
+    ) -> None:
+        await self._task_repo.create_task_run(
+            task_run_id=task_run_id,
+            root_run_id=root_run_id,
+            triggered_by=triggered_by,
+            input_payload=input_payload,
+            max_attempts=max_attempts,
+        )
+
+    async def delete_task_run(self, task_run_id: UUID) -> None:
+        await self._task_repo.delete_task_run(task_run_id)
+
     async def mark_running(self, task_run_id: UUID, worker_instance_id: str) -> bool:
         return await self._task_repo.mark_running(task_run_id, worker_instance_id)
 

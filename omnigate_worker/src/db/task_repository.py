@@ -54,6 +54,58 @@ class TaskRunRepository:
             status=row["status"],
         )
 
+    async def create_task_run(
+        self,
+        *,
+        task_run_id: UUID,
+        root_run_id: UUID,
+        triggered_by: str,
+        input_payload: dict,
+        max_attempts: int,
+    ) -> None:
+        """创建一条新的 queued 任务记录。"""
+
+        query = """
+            INSERT INTO task_runs (
+                id,
+                root_run_id,
+                attempt_no,
+                max_attempts,
+                status,
+                triggered_by,
+                input_payload,
+                created_at,
+                updated_at
+            ) VALUES (
+                $1,
+                $2,
+                1,
+                $3,
+                'queued',
+                $4,
+                $5::jsonb,
+                now(),
+                now()
+            )
+        """
+        await self._pool.execute(
+            query,
+            task_run_id,
+            root_run_id,
+            max(1, max_attempts),
+            triggered_by,
+            json.dumps(input_payload, ensure_ascii=False),
+        )
+
+    async def delete_task_run(self, task_run_id: UUID) -> None:
+        """按 ID 删除一条任务记录。"""
+
+        query = """
+            DELETE FROM task_runs
+            WHERE id = $1
+        """
+        await self._pool.execute(query, task_run_id)
+
     async def mark_running(self, task_run_id: UUID, worker_instance_id: str) -> bool:
         """
         把 queued 状态推进到 running。

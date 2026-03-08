@@ -43,6 +43,7 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
     private static final String MODULE_CHATGPT = "chatgpt";
     private static final String ACTION_BATCH_REGISTER = "batch_register_chatgpt_accounts";
     private static final String STATUS_QUEUED = "queued";
+    private static final int SINGLE_SIGNUP_COUNT = 1;
     private static final String DEFAULT_TRIGGERED_BY = "system";
     private static final String RETRY_MAX_ATTEMPTS_KEY = "task.retry_max_attempts";
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
@@ -65,7 +66,7 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
         validateBatchRegisterSettings();
         UUID taskRunId = UUID.randomUUID();
         UUID rootRunId = UUID.randomUUID();
-        String payloadJson = buildTaskPayloadJson(signupCount);
+        String payloadJson = buildTaskPayloadJson(signupCount, 1);
         String triggeredBy = resolveTriggeredBy();
         int maxAttempts = resolveRetryMaxAttempts();
 
@@ -177,8 +178,11 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
         return signupCount;
     }
 
-    private String buildTaskPayloadJson(int signupCount) {
-        Map<String, Object> bizPayload = Map.of("signup_count", signupCount);
+    private String buildTaskPayloadJson(int requestedCount, int currentIndex) {
+        Map<String, Object> bizPayload = new LinkedHashMap<>();
+        bizPayload.put("signup_count", SINGLE_SIGNUP_COUNT);
+        bizPayload.put("requested_count", requestedCount);
+        bizPayload.put("current_index", currentIndex);
         Map<String, Object> taskPayload = new LinkedHashMap<>();
         taskPayload.put("module", MODULE_CHATGPT);
         taskPayload.put("action", ACTION_BATCH_REGISTER);

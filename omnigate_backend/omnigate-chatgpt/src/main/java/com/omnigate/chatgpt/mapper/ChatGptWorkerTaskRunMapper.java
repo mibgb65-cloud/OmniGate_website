@@ -84,6 +84,8 @@ public interface ChatGptWorkerTaskRunMapper {
                    input_payload ->> 'module' AS module,
                    input_payload ->> 'action' AS action,
                    status,
+                   CAST(input_payload -> 'payload' ->> 'current_index' AS INTEGER) AS currentIndex,
+                   CAST(input_payload -> 'payload' ->> 'requested_count' AS INTEGER) AS requestedCount,
                    error_code AS errorCode,
                    error_message AS errorMessage,
                    last_checkpoint AS lastCheckpoint,
@@ -111,6 +113,8 @@ public interface ChatGptWorkerTaskRunMapper {
                    input_payload ->> 'module' AS module,
                    input_payload ->> 'action' AS action,
                    status,
+                   CAST(input_payload -> 'payload' ->> 'current_index' AS INTEGER) AS currentIndex,
+                   CAST(input_payload -> 'payload' ->> 'requested_count' AS INTEGER) AS requestedCount,
                    error_code AS errorCode,
                    error_message AS errorMessage,
                    last_checkpoint AS lastCheckpoint,
@@ -120,7 +124,7 @@ public interface ChatGptWorkerTaskRunMapper {
                    updated_at AS updatedAt
             FROM task_runs
             WHERE root_run_id = #{rootRunId}
-            ORDER BY attempt_no DESC, created_at DESC
+            ORDER BY created_at DESC, attempt_no DESC
             LIMIT 1
             """)
     ChatGptTaskRunStatusVO selectLatestStatusByRootRunId(@Param("rootRunId") UUID rootRunId);

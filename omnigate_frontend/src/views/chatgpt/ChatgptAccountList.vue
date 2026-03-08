@@ -69,10 +69,16 @@ const activeFilterTags = computed(() => {
 })
 const latestAutoRegisterTaskStatusLabel = computed(() => formatTaskStatus(latestAutoRegisterTask.value?.status))
 const latestAutoRegisterTaskAlertType = computed(() => resolveTaskAlertType(latestAutoRegisterTask.value?.status))
+const latestAutoRegisterTaskProgressLabel = computed(() => {
+  const requestedCount = Number(latestAutoRegisterTask.value?.requestedCount || 0)
+  const currentIndex = Number(latestAutoRegisterTask.value?.currentIndex || 0)
+  if (requestedCount <= 0 || currentIndex <= 0) return ''
+  return `${Math.min(currentIndex, requestedCount)}/${requestedCount}`
+})
 const latestAutoRegisterTaskTitle = computed(() => {
   const status = normalizeTaskStatus(latestAutoRegisterTask.value?.status)
   if (!status) return '最近一次自动注册任务'
-  return isTerminalTaskStatus(status) ? `最近一次自动注册任务已结束（${formatTaskStatus(status)}）` : `最近一次自动注册任务进行中（${formatTaskStatus(status)}）`
+  return isTerminalTaskStatus(status) ? `最近一次自动注册队列已结束（${formatTaskStatus(status)}）` : `最近一次自动注册队列进行中（${formatTaskStatus(status)}）`
 })
 const exportButtonLabel = computed(() => (
   selectedRows.value.length
@@ -345,6 +351,7 @@ onBeforeUnmount(stopTaskStatusPolling)
         <div class="task-meta">
           <span>数量：{{ latestAutoRegisterTask.requestedCount || '-' }}</span>
           <span>状态：{{ latestAutoRegisterTaskStatusLabel }}</span>
+          <span v-if="latestAutoRegisterTaskProgressLabel">进度：{{ latestAutoRegisterTaskProgressLabel }}</span>
           <span>TaskRunId：{{ latestAutoRegisterTask.taskRunId || '-' }}</span>
           <span>RootRunId：{{ latestAutoRegisterTask.rootRunId || '-' }}</span>
           <span v-if="latestAutoRegisterTask.lastCheckpoint">检查点：{{ latestAutoRegisterTask.lastCheckpoint }}</span>

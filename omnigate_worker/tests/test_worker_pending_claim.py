@@ -41,6 +41,7 @@ class TestWorkerPendingClaim(unittest.IsolatedAsyncioTestCase):
         )
         return WorkerNode(
             settings=settings,  # type: ignore[arg-type]
+            db_pool=SimpleNamespace(),  # type: ignore[arg-type]
             state_manager=SimpleNamespace(),  # type: ignore[arg-type]
             stream_client=stream_client,  # type: ignore[arg-type]
             heartbeat_service=SimpleNamespace(),  # type: ignore[arg-type]

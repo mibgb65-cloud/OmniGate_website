@@ -24,6 +24,10 @@ public class ChatGptTaskRunStatusVO {
 
     private String status;
 
+    private Integer currentIndex;
+
+    private Integer requestedCount;
+
     private String errorCode;
 
     private String errorMessage;
