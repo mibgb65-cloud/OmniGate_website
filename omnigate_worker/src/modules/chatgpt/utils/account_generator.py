@@ -6,7 +6,7 @@ import secrets
 
 import asyncpg
 
-from src.db import SystemSettingsRepository
+from src.db import ChatGptAccountPersistence, SystemSettingsRepository
 
 
 def generate_random_name():
@@ -80,7 +80,9 @@ async def generate_random_email(
     *,
     db_pool: asyncpg.Pool | None = None,
     settings_repository: SystemSettingsRepository | None = None,
+    account_persistence: ChatGptAccountPersistence | None = None,
     prefix_length: int = 12,
+    max_attempts: int = 20,
 ) -> str:
     """
     生成随机邮箱地址。
@@ -92,11 +94,22 @@ async def generate_random_email(
         if db_pool is None:
             raise ValueError("错误：db_pool 或 settings_repository 至少需要传一个。")
         settings_repository = SystemSettingsRepository(db_pool)
+    if account_persistence is None:
+        if db_pool is None:
+            raise ValueError("错误：db_pool 或 account_persistence 至少需要传一个。")
+        account_persistence = ChatGptAccountPersistence(db_pool)
+    if max_attempts <= 0:
+        raise ValueError("错误：max_attempts 必须大于 0。")
 
     email_suffix = await settings_repository.get_chatgpt_registration_email_suffix()
     normalized_suffix = _normalize_email_suffix(email_suffix)
-    prefix = generate_random_email_prefix(prefix_length)
-    return f"{prefix}@{normalized_suffix}"
+    for _ in range(max_attempts):
+        prefix = generate_random_email_prefix(prefix_length)
+        candidate_email = f"{prefix}@{normalized_suffix}"
+        if not await account_persistence.email_exists(candidate_email):
+            return candidate_email
+
+    raise RuntimeError(f"生成唯一 ChatGPT 注册邮箱失败，已重试 {max_attempts} 次")
 
 
 def _normalize_email_suffix(value: str | None) -> str:

@@ -24,6 +24,25 @@ class ChatGptAccountPersistence:
         self._pool = pool
         self._encryptor = encryptor or AesTypeHandlerCompat()
 
+    async def email_exists(self, email: str) -> bool:
+        """检查邮箱是否已经存在于 ChatGPT 账号表中。"""
+
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            raise ValueError("email 不能为空")
+
+        exists = await self._pool.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM acc_chatgpt_base
+                WHERE email = $1
+            )
+            """,
+            normalized_email,
+        )
+        return bool(exists)
+
     async def create_account(
         self,
         *,
@@ -52,6 +71,8 @@ class ChatGptAccountPersistence:
             raise ValueError("email 不能为空")
         if not normalized_password:
             raise ValueError("password 不能为空")
+        if await self.email_exists(normalized_email):
+            raise ValueError(f"ChatGPT 账号邮箱已存在: {normalized_email}")
 
         encrypted_password = self._encryptor.encrypt_base64(normalized_password)
         encrypted_session_token = (
@@ -65,48 +86,51 @@ class ChatGptAccountPersistence:
             else None
         )
 
-        inserted_id = await self._pool.fetchval(
-            """
-            INSERT INTO acc_chatgpt_base (
-                email,
-                password,
-                session_token,
-                totp_secret,
-                sub_tier,
-                account_status,
+        try:
+            inserted_id = await self._pool.fetchval(
+                """
+                INSERT INTO acc_chatgpt_base (
+                    email,
+                    password,
+                    session_token,
+                    totp_secret,
+                    sub_tier,
+                    account_status,
+                    expire_date,
+                    created_by,
+                    updated_by,
+                    deleted,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    $9,
+                    0,
+                    now(),
+                    now()
+                )
+                RETURNING id
+                """,
+                normalized_email,
+                encrypted_password,
+                encrypted_session_token,
+                encrypted_totp_secret,
+                (sub_tier or self.DEFAULT_SUB_TIER).strip() or self.DEFAULT_SUB_TIER,
+                (account_status or self.DEFAULT_ACCOUNT_STATUS).strip() or self.DEFAULT_ACCOUNT_STATUS,
                 expire_date,
                 created_by,
                 updated_by,
-                deleted,
-                created_at,
-                updated_at
             )
-            VALUES (
-                $1,
-                $2,
-                $3,
-                $4,
-                $5,
-                $6,
-                $7,
-                $8,
-                $9,
-                0,
-                now(),
-                now()
-            )
-            RETURNING id
-            """,
-            normalized_email,
-            encrypted_password,
-            encrypted_session_token,
-            encrypted_totp_secret,
-            (sub_tier or self.DEFAULT_SUB_TIER).strip() or self.DEFAULT_SUB_TIER,
-            (account_status or self.DEFAULT_ACCOUNT_STATUS).strip() or self.DEFAULT_ACCOUNT_STATUS,
-            expire_date,
-            created_by,
-            updated_by,
-        )
+        except asyncpg.UniqueViolationError as exc:
+            raise ValueError(f"ChatGPT 账号邮箱已存在: {normalized_email}") from exc
         if inserted_id is None:
             raise RuntimeError(f"插入 ChatGPT 账号失败: email={normalized_email}")
         return int(inserted_id)

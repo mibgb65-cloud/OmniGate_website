@@ -1,9 +1,11 @@
 package com.omnigate.user.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.omnigate.common.entity.BaseEntity;
+import com.omnigate.common.handler.JsonbStringTypeHandler;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -14,7 +16,7 @@ import java.time.LocalDateTime;
  */
 @Getter
 @Setter
-@TableName("sys_user")
+@TableName(value = "sys_user", autoResultMap = true)
 public class SysUser extends BaseEntity {
 
     @TableId(type = IdType.AUTO)
@@ -39,5 +41,6 @@ public class SysUser extends BaseEntity {
 
     private LocalDateTime lastLoginAt;
 
+    @TableField(typeHandler = JsonbStringTypeHandler.class)
     private String extInfo;
 }

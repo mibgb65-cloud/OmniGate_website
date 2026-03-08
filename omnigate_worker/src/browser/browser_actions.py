@@ -13,6 +13,15 @@ logger = logging.getLogger(__name__)
 LOG_PREFIX = "[浏览器动作]"
 
 
+class PageOpenTimeoutError(TimeoutError):
+    """页面导航超过限定时间时抛出的异常。"""
+
+    def __init__(self, *, url: str, timeout_seconds: float) -> None:
+        self.url = url
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"打开页面超时 | url={url} | timeout_seconds={timeout_seconds:.1f}")
+
+
 class BrowserActions:
     """浏览器通用动作，供多个 service 复用。"""
 
@@ -61,9 +70,35 @@ class BrowserActions:
 
         await asyncio.sleep(0.1)
 
-    async def open_page(self, browser: Any, url: str, *, focus: bool = True) -> Any:
+    async def open_page(
+        self,
+        browser: Any,
+        url: str,
+        *,
+        focus: bool = True,
+        timeout_seconds: float | None = None,
+    ) -> Any:
         """在浏览器中打开页面并返回页面对象。"""
-        page = await browser.get(url)
+        normalized_timeout: float | None = None
+        if timeout_seconds is not None:
+            normalized_timeout = float(timeout_seconds)
+            if normalized_timeout <= 0:
+                raise ValueError("timeout_seconds 必须大于 0")
+
+        try:
+            if normalized_timeout is None:
+                page = await browser.get(url)
+            else:
+                page = await asyncio.wait_for(browser.get(url), timeout=normalized_timeout)
+        except asyncio.TimeoutError as exc:
+            logger.warning(
+                "%s 打开页面超时 | url=%s | timeout_seconds=%.1f",
+                LOG_PREFIX,
+                url,
+                normalized_timeout or 0.0,
+            )
+            raise PageOpenTimeoutError(url=url, timeout_seconds=normalized_timeout or 0.0) from exc
+
         if focus:
             await self.focus_page(page)
         return page

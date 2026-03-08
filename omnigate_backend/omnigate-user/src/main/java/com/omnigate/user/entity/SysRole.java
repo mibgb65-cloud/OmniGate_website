@@ -1,9 +1,11 @@
 package com.omnigate.user.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.omnigate.common.entity.BaseEntity;
+import com.omnigate.common.handler.JsonbStringTypeHandler;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,7 +14,7 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-@TableName("sys_role")
+@TableName(value = "sys_role", autoResultMap = true)
 public class SysRole extends BaseEntity {
 
     @TableId(type = IdType.AUTO)
@@ -31,5 +33,6 @@ public class SysRole extends BaseEntity {
 
     private Integer sort;
 
+    @TableField(typeHandler = JsonbStringTypeHandler.class)
     private String extInfo;
 }

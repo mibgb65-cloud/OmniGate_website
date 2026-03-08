@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     BROWSER_SANDBOX: bool = True
     # 浏览器语言（可选），例如：en-US
     BROWSER_LANG: str | None = "en-US"
+    # ChatGPT 首页导航超时秒数；超过后立即视为失败
+    CHATGPT_HOME_OPEN_TIMEOUT_SECONDS: int = 45
+    # ChatGPT 首页导航额外重试次数；总尝试次数 = 1 + 本值
+    CHATGPT_HOME_OPEN_MAX_RETRIES: int = 2
 
     # 从项目根目录的 .env 读取配置，忽略未定义字段
     model_config = SettingsConfigDict(

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from src.modules.base_task import BaseTask
 from src.modules.chatgpt.models import BatchRegisterChatGptAccountsParams
-from src.modules.chatgpt.services import BatchRegisterChatGptAccountsService
+from src.modules.chatgpt.services import BatchRegisterChatGptAccountsService, RetryableChatGptSignupError
 
 
 class BatchRegisterChatGptAccountsTask(BaseTask):
@@ -84,6 +84,26 @@ class BatchRegisterChatGptAccountsTask(BaseTask):
                 "status": "success",
                 "trace_id": trace_id,
                 "data": result.model_dump(),
+            }
+        except RetryableChatGptSignupError as exc:
+            elapsed = round(time.monotonic() - started_at, 2)
+            await self.log_error(
+                "ChatGPT 首页打开连续超时，任务将进入重试",
+                step=3,
+                step_total=step_total,
+                error_code="RETRYABLE_OPEN_PAGE_TIMEOUT",
+                context={
+                    "detail": str(exc),
+                    "action": self.action_name,
+                    "trace_id": trace_id,
+                    "elapsed_seconds": elapsed,
+                },
+            )
+            return {
+                "status": "failed",
+                "trace_id": trace_id,
+                "error_code": "RETRYABLE_OPEN_PAGE_TIMEOUT",
+                "error_message": str(exc),
             }
         except Exception as exc:  # noqa: BLE001
             logging.getLogger(__name__).exception(

@@ -10,7 +10,8 @@ from typing import Any
 
 import asyncpg
 
-from src.browser.browser_actions import BrowserActions
+from src.browser.browser_actions import BrowserActions, PageOpenTimeoutError
+from src.config.config import get_settings
 from src.modules.chatgpt.actions.chatgpt_2fa_action import ChatGPT2FAAction
 from src.modules.chatgpt.utils.account_generator import (
     generate_random_email,
@@ -39,13 +40,21 @@ class OpenAISignupService:
         actions: BrowserActions | None = None,
         verification_code_service: GetChatGptVerificationCodeService | None = None,
         two_factor_action: ChatGPT2FAAction | None = None,
+        chatgpt_home_open_timeout_seconds: float | None = None,
     ) -> None:
+        settings = get_settings()
         self.actions = actions or BrowserActions()
         self._db_pool = db_pool
         self._verification_code_service = verification_code_service or (
             GetChatGptVerificationCodeService(db_pool=db_pool) if db_pool is not None else None
         )
         self._two_factor_action = two_factor_action or ChatGPT2FAAction()
+        resolved_timeout = (
+            chatgpt_home_open_timeout_seconds
+            if chatgpt_home_open_timeout_seconds is not None
+            else settings.CHATGPT_HOME_OPEN_TIMEOUT_SECONDS
+        )
+        self._chatgpt_home_open_timeout_seconds = max(1.0, float(resolved_timeout))
 
     async def process_account(
         self,
@@ -92,7 +101,11 @@ class OpenAISignupService:
             await self._reset_browser_state(browser)
 
             self._log_flow(logging.INFO, "打开 ChatGPT 首页", stage="页面打开", email=email)
-            page = await self.actions.open_page(browser, "https://chatgpt.com")
+            page = await self.actions.open_page(
+                browser,
+                "https://chatgpt.com",
+                timeout_seconds=self._chatgpt_home_open_timeout_seconds,
+            )
             await asyncio.sleep(4)
 
             self._log_flow(logging.INFO, "定位登录入口", stage="入口定位", email=email)
@@ -203,6 +216,24 @@ class OpenAISignupService:
                     "msg": f"发生错误或被拦截: {exc}",
                 }
 
+        except PageOpenTimeoutError as exc:
+            self._log_flow(
+                logging.ERROR,
+                "打开 ChatGPT 首页超时",
+                stage="页面打开",
+                email=email,
+                extra={
+                    "超时秒数": f"{exc.timeout_seconds:.0f}",
+                    "URL": exc.url,
+                },
+            )
+            return {
+                "status": "OPEN_PAGE_TIMEOUT",
+                "email": email,
+                "password": password,
+                "name": name,
+                "msg": str(exc),
+            }
         except Exception as exc:  # noqa: BLE001
             logger.exception("%s 注册流程发生未处理异常 | 阶段=流程异常 | 邮箱=%s", self._LOG_PREFIX, self._mask_email(email))
             return {
