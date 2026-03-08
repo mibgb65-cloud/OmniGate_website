@@ -71,7 +71,11 @@ async function handleUserCommand(command) {
 
       <el-breadcrumb :separator-icon="ArrowRight" class="breadcrumb">
         <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
-        <el-breadcrumb-item v-for="(item, index) in breadcrumbs" :key="`${item.path}-${index}`">
+        <el-breadcrumb-item
+          v-for="(item, index) in breadcrumbs"
+          :key="`${item.path || item.title}-${index}`"
+          :to="index < breadcrumbs.length - 1 && item.path ? { path: item.path } : undefined"
+        >
           {{ item.title }}
         </el-breadcrumb-item>
       </el-breadcrumb>
@@ -133,6 +137,14 @@ async function handleUserCommand(command) {
   color: var(--og-slate-600);
   font-weight: 500;
   transition: all 0.3s ease;
+}
+
+:deep(.breadcrumb .el-breadcrumb__inner.is-link) {
+  color: var(--og-slate-700);
+}
+
+:deep(.breadcrumb .el-breadcrumb__inner.is-link:hover) {
+  color: var(--og-emerald-700);
 }
 
 :deep(.breadcrumb .el-breadcrumb__item:last-child .el-breadcrumb__inner) {

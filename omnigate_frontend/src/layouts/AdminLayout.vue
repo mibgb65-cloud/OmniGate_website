@@ -58,12 +58,33 @@ const navItems = [
   },
 ]
 
-function getGoogleSnapshotEmail(accountId) {
-  if (!accountId) {
+const accountDetailBreadcrumbMap = {
+  'google-account-detail': {
+    listPath: '/google/accounts',
+    listTitle: 'Google 账号池',
+    snapshotKeyPrefix: 'og-google-account-snapshot-',
+    defaultTitle: 'Google 账号详情',
+  },
+  'github-account-detail': {
+    listPath: '/github/accounts',
+    listTitle: 'GitHub 账号池',
+    snapshotKeyPrefix: 'og-github-account-snapshot-',
+    defaultTitle: 'GitHub 账号详情',
+  },
+  'chatgpt-account-detail': {
+    listPath: '/chatgpt/accounts',
+    listTitle: 'ChatGPT 账号池',
+    snapshotKeyPrefix: 'og-chatgpt-account-snapshot-',
+    defaultTitle: 'ChatGPT 账号详情',
+  },
+}
+
+function getSnapshotEmail(snapshotKeyPrefix, accountId) {
+  if (!snapshotKeyPrefix || !accountId) {
     return ''
   }
   try {
-    const raw = sessionStorage.getItem(`og-google-account-snapshot-${accountId}`)
+    const raw = sessionStorage.getItem(`${snapshotKeyPrefix}${accountId}`)
     if (!raw) {
       return ''
     }
@@ -74,23 +95,42 @@ function getGoogleSnapshotEmail(accountId) {
   }
 }
 
+function resolveAccountDetailBreadcrumbs() {
+  const routeName = String(route.name || '').trim()
+  const config = accountDetailBreadcrumbMap[routeName]
+  const accountId = String(route.params.id || '').trim()
+  if (!config || !accountId) {
+    return null
+  }
+
+  const emailFromQuery = typeof route.query.email === 'string' ? route.query.email.trim() : ''
+  const emailFromSnapshot = getSnapshotEmail(config.snapshotKeyPrefix, accountId)
+  const detailTitle = emailFromQuery || emailFromSnapshot || config.defaultTitle || accountId
+
+  return [
+    {
+      path: config.listPath,
+      title: config.listTitle,
+    },
+    {
+      path: '',
+      title: detailTitle,
+    },
+  ]
+}
+
 const breadcrumbs = computed(() => {
+  const accountDetailBreadcrumbs = resolveAccountDetailBreadcrumbs()
+  if (accountDetailBreadcrumbs) {
+    return accountDetailBreadcrumbs
+  }
+
   const items = route.matched
     .filter((item) => item.meta?.title)
     .map((item) => ({
       path: item.path,
       title: item.meta.title,
     }))
-
-  if (route.path.startsWith('/google/accounts/') && route.params.id) {
-    const emailFromQuery = typeof route.query.email === 'string' ? route.query.email.trim() : ''
-    const emailFromSnapshot = getGoogleSnapshotEmail(String(route.params.id))
-    const detailLabel = emailFromQuery || emailFromSnapshot || String(route.params.id)
-    items.push({
-      path: route.fullPath,
-      title: detailLabel,
-    })
-  }
   return items
 })
 const activeMenuPath = computed(() => {

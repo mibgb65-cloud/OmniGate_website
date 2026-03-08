@@ -188,7 +188,18 @@ function handleReset() { filterForm.email = ''; filterForm.subTier = undefined; 
 function handleCurrentChange(page) { pager.current = page; fetchChatgptAccounts() }
 function handleSizeChange(size) { pager.current = 1; pager.size = size; fetchChatgptAccounts() }
 function handleSelectionChange(selection) { selectedRows.value = selection || [] }
-function handleRowClick(row, column) { if (column?.type !== 'selection' && row?.id) router.push(`/chatgpt/accounts/${row.id}`) }
+function handleRowClick(row, column) {
+  if (column?.type === 'selection' || !row?.id) return
+  try {
+    sessionStorage.setItem(`og-chatgpt-account-snapshot-${row.id}`, JSON.stringify(row))
+  } catch {
+    // ignore snapshot persistence failure
+  }
+  router.push({
+    path: `/chatgpt/accounts/${row.id}`,
+    query: row?.email ? { email: row.email } : undefined,
+  })
+}
 function resetAccountForm() { Object.assign(accountForm, { id: null, email: '', password: '', sessionToken: '', totpSecret: '', subTier: 'free', accountStatus: 'active', expireDate: '' }); originalAccount.value = null }
 function openCreateDialog() { accountDialogMode.value = 'create'; resetAccountForm(); accountDialogVisible.value = true; nextTick(() => accountFormRef.value?.clearValidate()) }
 function openAutoRegisterDialog() { autoRegisterForm.signupCount = 1; autoRegisterDialogVisible.value = true; nextTick(() => autoRegisterFormRef.value?.clearValidate()) }

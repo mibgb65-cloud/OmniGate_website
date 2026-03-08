@@ -578,6 +578,28 @@ function getSnapshotById(id) {
   }
 }
 
+function syncBreadcrumbState(detailData) {
+  if (!accountId.value || !detailData) return
+
+  try {
+    sessionStorage.setItem(`og-google-account-snapshot-${accountId.value}`, JSON.stringify(detailData))
+  } catch {
+    // ignore snapshot persistence failure
+  }
+
+  const email = String(detailData?.email || '').trim()
+  if (!email || String(route.query.email || '').trim() === email) {
+    return
+  }
+
+  router.replace({
+    query: {
+      ...route.query,
+      email,
+    },
+  }).catch(() => {})
+}
+
 async function fetchDetail(options = {}) {
   const { silent = false, silentError = false } = options
 
@@ -608,6 +630,7 @@ async function fetchDetail(options = {}) {
     ])
 
     detail.value = detailData || {}
+    syncBreadcrumbState(detail.value)
     if (!baseEditing.value) {
       fillBaseEditForm(detail.value)
     }
