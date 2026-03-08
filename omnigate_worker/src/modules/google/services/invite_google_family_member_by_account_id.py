@@ -38,6 +38,8 @@ class GoogleAccountCredential:
 class InviteGoogleFamilyMemberByAccountIdService:
     """Service flow: load account -> login -> invite target email."""
 
+    _LOG_PREFIX = "[Google家庭邀请]"
+
     def __init__(
         self,
         *,
@@ -87,7 +89,8 @@ class InviteGoogleFamilyMemberByAccountIdService:
 
         def log_step(step_no: int, title: str) -> None:
             logger.info(
-                "服务流程[%s/%s] action=%s trace_id=%s %s",
+                "%s 步骤=%s/%s | action=%s | trace_id=%s | %s",
+                self._LOG_PREFIX,
                 step_no,
                 total_steps,
                 action,
@@ -99,9 +102,17 @@ class InviteGoogleFamilyMemberByAccountIdService:
         log_step(1, f"读取账号凭据 account_id={req.google_account_id} target_email={req.invited_account_email}")
 
         credential = await self._load_credential(req.google_account_id)
+        logger.info(
+            "%s 账号凭据读取完成 | trace_id=%s | email=%s | target_email=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            self._mask_email(credential.email),
+            self._mask_email(req.invited_account_email),
+        )
         log_step(2, "启动浏览器")
         browser = await self.browser_actions.start_browser()
         self._last_browser = browser
+        logger.info("%s 浏览器已启动 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         log_step(3, "执行登录")
         auth_params = GoogleAuthParams(
@@ -110,6 +121,13 @@ class InviteGoogleFamilyMemberByAccountIdService:
             twofa=credential.totp_secret,
         )
         login_result = await self.auth_actions.login_google(browser, auth_params)
+        logger.info(
+            "%s 登录动作执行结束 | trace_id=%s | ok=%s | step=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            login_result.get("ok"),
+            login_result.get("step"),
+        )
 
         invite_result: dict[str, Any] | None = None
         if login_result.get("ok"):
@@ -120,7 +138,7 @@ class InviteGoogleFamilyMemberByAccountIdService:
                     params=GoogleFamilyInviteParams(target_email=req.invited_account_email),
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Invite family member failed trace_id=%s: %s", trace_id, exc)
+                logger.exception("%s 家庭组邀请动作失败 | trace_id=%s", self._LOG_PREFIX, trace_id)
                 invite_result = {"error": str(exc)}
             else:
                 invite_result = self._to_plain_dict(raw)
@@ -139,7 +157,7 @@ class InviteGoogleFamilyMemberByAccountIdService:
                         trace_id=trace_id,
                     )
         else:
-            logger.warning("Login not successful, skip family invite. trace_id=%s", trace_id)
+            logger.warning("%s 登录未成功，跳过家庭组邀请 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         result: dict[str, Any] = {
             "account_id": credential.account_id,
@@ -158,13 +176,14 @@ class InviteGoogleFamilyMemberByAccountIdService:
             log_step(7, "跳过手动等待（keep_page_open=false）")
 
         logger.info(
-            "服务流程完成[%s/%s] action=%s trace_id=%s account_id=%s target_email=%s elapsed=%.2fs",
+            "%s 服务流程完成 | 步骤=%s/%s | action=%s | trace_id=%s | account_id=%s | target_email=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             action,
             trace_id,
             credential.account_id,
-            req.invited_account_email,
+            self._mask_email(req.invited_account_email),
             elapsed_seconds(),
         )
         return result
@@ -182,7 +201,7 @@ class InviteGoogleFamilyMemberByAccountIdService:
             invite_result=invite_result,
             family_status=family_status,
         )
-        logger.info("家庭组邀请结果已写入业务表 trace_id=%s account_id=%s", trace_id, account_id)
+        logger.info("%s 家庭组邀请结果已写入业务表 | trace_id=%s | account_id=%s", self._LOG_PREFIX, trace_id, account_id)
 
     async def _confirm_family_status_after_invite(
         self,
@@ -202,7 +221,13 @@ class InviteGoogleFamilyMemberByAccountIdService:
                 family_raw = await self.family_actions.check_family_group(browser)
                 family_payload = self._to_plain_dict(family_raw)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("邀请后确认家庭组成员失败 trace_id=%s round=%s error=%s", trace_id, round_no, exc)
+                logger.warning(
+                    "%s 邀请后确认家庭组成员失败 | trace_id=%s | round=%s | 原因=%s",
+                    self._LOG_PREFIX,
+                    trace_id,
+                    round_no,
+                    exc,
+                )
                 family_payload = None
 
             if isinstance(family_payload, dict):
@@ -217,9 +242,10 @@ class InviteGoogleFamilyMemberByAccountIdService:
                     member_role = str(item.get("member_role") or "").strip()
                     if member_email == target and member_name and member_role:
                         logger.info(
-                            "邀请后成员确认成功 trace_id=%s email=%s name=%s role=%s",
+                            "%s 邀请后成员确认成功 | trace_id=%s | email=%s | name=%s | role=%s",
+                            self._LOG_PREFIX,
                             trace_id,
-                            member_email,
+                            self._mask_email(member_email),
                             member_name,
                             member_role,
                         )
@@ -228,14 +254,19 @@ class InviteGoogleFamilyMemberByAccountIdService:
             if round_no < max_rounds:
                 await asyncio.sleep(2.0)
 
-        logger.warning("邀请后未确认到完整成员信息 trace_id=%s target_email=%s", trace_id, target)
+        logger.warning(
+            "%s 邀请后未确认到完整成员信息 | trace_id=%s | target_email=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            self._mask_email(target),
+        )
         return latest_payload
 
     async def close_browser(self) -> None:
         if self._last_browser is not None:
             await self.browser_actions.close_browser()
             self._last_browser = None
-            logger.info("Browser closed.")
+            logger.info("%s 浏览器已关闭", self._LOG_PREFIX)
 
     async def close(self) -> None:
         await self.close_browser()
@@ -271,12 +302,12 @@ class InviteGoogleFamilyMemberByAccountIdService:
 
     async def _wait_for_manual_operation(self, *, max_wait_seconds: int | None) -> None:
         start = time.monotonic()
-        logger.info("Browser is kept open for manual operation.")
+        logger.info("%s 页面已保持打开，等待手动操作", self._LOG_PREFIX)
         while True:
             if max_wait_seconds is not None and max_wait_seconds >= 0:
                 elapsed = time.monotonic() - start
                 if elapsed >= max_wait_seconds:
-                    logger.info("Reach max_wait_seconds=%s, stop waiting.", max_wait_seconds)
+                    logger.info("%s 达到最大等待时间，结束手动等待 | max_wait_seconds=%s", self._LOG_PREFIX, max_wait_seconds)
                     return
             await asyncio.sleep(0.5)
 
@@ -317,3 +348,16 @@ class InviteGoogleFamilyMemberByAccountIdService:
         if callable(model_dump):
             return model_dump()
         return {"value": str(value)}
+
+    @staticmethod
+    def _mask_email(email: str) -> str:
+        normalized = email.strip()
+        if "@" not in normalized:
+            return normalized
+
+        local_part, domain = normalized.split("@", 1)
+        if len(local_part) <= 4:
+            masked_local = f"{local_part[:1]}***"
+        else:
+            masked_local = f"{local_part[:2]}***{local_part[-2:]}"
+        return f"{masked_local}@{domain}"

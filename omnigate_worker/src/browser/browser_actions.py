@@ -10,6 +10,7 @@ import logging
 from src.browser.browser_manager import BrowserManager
 
 logger = logging.getLogger(__name__)
+LOG_PREFIX = "[浏览器动作]"
 
 
 class BrowserActions:
@@ -56,7 +57,7 @@ class BrowserActions:
                     if isawaitable(result):
                         await result
             except Exception as exc:  # noqa: BLE001
-                logger.warning("关闭底层 browser 异常: %s", exc)
+                logger.warning("%s 关闭底层浏览器实例异常 | 原因=%s", LOG_PREFIX, exc)
 
         await asyncio.sleep(0.1)
 
@@ -91,7 +92,7 @@ class BrowserActions:
                     await result
                 return
             except Exception as exc:  # noqa: BLE001
-                logger.debug("page.activate() 失败: %s", exc)
+                logger.debug("%s page.activate() 失败 | 原因=%s", LOG_PREFIX, exc)
 
         bring_to_front = getattr(page, "bring_to_front", None)
         if callable(bring_to_front):
@@ -101,7 +102,7 @@ class BrowserActions:
                     await result
                 return
             except Exception as exc:  # noqa: BLE001
-                logger.debug("page.bring_to_front() 失败: %s", exc)
+                logger.debug("%s page.bring_to_front() 失败 | 原因=%s", LOG_PREFIX, exc)
 
         try:
             import nodriver.cdp.page as cdp_page
@@ -112,13 +113,14 @@ class BrowserActions:
                 if isawaitable(result):
                     await result
         except Exception as exc:  # noqa: BLE001
-            logger.debug("CDP bring_to_front 失败: %s", exc)
+            logger.debug("%s CDP bring_to_front 失败 | 原因=%s", LOG_PREFIX, exc)
 
     @asynccontextmanager
-    async def browser_lifespan(self):
+    async def browser_lifespan(self, *, auto_close: bool = True):
         """浏览器生命周期上下文。"""
         browser = await self.start_browser()
         try:
             yield browser
         finally:
-            await self.close_browser()
+            if auto_close:
+                await self.close_browser()

@@ -160,6 +160,8 @@ load_env() {
 
   : "${FRONTEND_BIND_HOST:=0.0.0.0}"
   : "${FRONTEND_PORT:=80}"
+  : "${FRONTEND_API_BASE_URL:=/}"
+  : "${FRONTEND_TASK_LOG_WS_URL:=/ws/task-log}"
   : "${HOST_NGINX_ENABLE:=false}"
   : "${HOST_NGINX_SERVER_NAME:=_}"
   : "${HOST_NGINX_CONFIG_PATH:=/etc/nginx/conf.d/omnigate.conf}"
@@ -173,6 +175,57 @@ validate_env_secrets() {
 
   if grep -Eq '^OMNIGATE_JWT_SECRET=ChangeThisJwtSecretAtLeast32Chars$' "${ENV_FILE}"; then
     fail ".env 中仍在使用默认 OMNIGATE_JWT_SECRET，请修改后再部署。"
+  fi
+}
+
+validate_numeric_range() {
+  local name="$1"
+  local value="$2"
+  local min_value="$3"
+  local max_value="$4"
+
+  [[ "${value}" =~ ^[0-9]+$ ]] || fail "${name} 必须是数字，当前值: ${value}"
+  (( value >= min_value && value <= max_value )) || fail "${name} 必须在 ${min_value}-${max_value} 之间，当前值: ${value}"
+}
+
+validate_env_runtime_settings() {
+  [[ -n "${POSTGRES_DB:-}" ]] || fail "POSTGRES_DB 不能为空。"
+  [[ -n "${POSTGRES_USER:-}" ]] || fail "POSTGRES_USER 不能为空。"
+  [[ -n "${POSTGRES_PASSWORD:-}" ]] || fail "POSTGRES_PASSWORD 不能为空。"
+  [[ -n "${OMNIGATE_JWT_SECRET:-}" ]] || fail "OMNIGATE_JWT_SECRET 不能为空。"
+
+  (( ${#OMNIGATE_JWT_SECRET} >= 32 )) || fail "OMNIGATE_JWT_SECRET 长度至少需要 32 位。"
+
+  validate_numeric_range "FRONTEND_PORT" "${FRONTEND_PORT}" 1 65535
+  validate_numeric_range "REDIS_DATABASE" "${REDIS_DATABASE:-0}" 0 99
+  validate_numeric_range "WORKER_CONCURRENCY" "${WORKER_CONCURRENCY:-3}" 1 64
+  validate_numeric_range "WORKER_MAX_CONCURRENCY_LIMIT" "${WORKER_MAX_CONCURRENCY_LIMIT:-10}" 1 256
+
+  if [[ "${WORKER_CONCURRENCY:-3}" -gt "${WORKER_MAX_CONCURRENCY_LIMIT:-10}" ]]; then
+    fail "WORKER_CONCURRENCY 不能大于 WORKER_MAX_CONCURRENCY_LIMIT。"
+  fi
+
+  case "${FRONTEND_API_BASE_URL}" in
+    ""|"/"|"/api")
+      ;;
+    http://*|https://*|/*)
+      warn "FRONTEND_API_BASE_URL=${FRONTEND_API_BASE_URL} 不是推荐值。通常建议使用 / 或 /api。"
+      ;;
+    *)
+      fail "FRONTEND_API_BASE_URL 必须为空、/、/api，或以 /、http://、https:// 开头。当前值: ${FRONTEND_API_BASE_URL}"
+      ;;
+  esac
+
+  case "${FRONTEND_TASK_LOG_WS_URL}" in
+    ""|"/ws/task-log"|ws://*|wss://*|/*)
+      ;;
+    *)
+      warn "FRONTEND_TASK_LOG_WS_URL=${FRONTEND_TASK_LOG_WS_URL} 看起来不是常见格式，通常建议留空、/ws/task-log、ws://... 或 wss://..."
+      ;;
+  esac
+
+  if [[ "${FRONTEND_API_BASE_URL}" == "/api" ]]; then
+    warn "FRONTEND_API_BASE_URL=/api 在当前前端版本仍兼容，但推荐改为 /，可减少旧构建产物出现 /api/api 路径的风险。"
   fi
 }
 
@@ -201,6 +254,28 @@ validate_host_nginx_settings() {
       fail "启用宿主机 Nginx 时，FRONTEND_BIND_HOST 应设为 127.0.0.1，避免前端容器直接暴露公网。"
       ;;
   esac
+}
+
+configure_selinux_for_nginx_if_needed() {
+  if ! is_true "${HOST_NGINX_ENABLE}"; then
+    return
+  fi
+
+  if ! command -v getenforce >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ "$(getenforce)" != "Enforcing" ]]; then
+    return
+  fi
+
+  if ! command -v setsebool >/dev/null 2>&1; then
+    warn "检测到 SELinux 为 Enforcing，但未找到 setsebool。若宿主机 Nginx 无法反代到容器，请手动执行: setsebool -P httpd_can_network_connect 1"
+    return
+  fi
+
+  info "检测到 SELinux 为 Enforcing，允许宿主机 Nginx 发起网络连接。"
+  run_as_root setsebool -P httpd_can_network_connect 1
 }
 
 install_nginx() {
@@ -281,6 +356,7 @@ configure_host_nginx_if_enabled() {
 
   install_nginx
   write_host_nginx_config
+  configure_selinux_for_nginx_if_needed
 
   run_as_root nginx -t
 
@@ -293,4 +369,33 @@ configure_host_nginx_if_enabled() {
 
   info "宿主机 Nginx 配置完成: ${HOST_NGINX_CONFIG_PATH}"
   info "当前代理目标: http://127.0.0.1:${FRONTEND_PORT}"
+}
+
+show_runtime_summary() {
+  info "访问提示："
+
+  if is_true "${HOST_NGINX_ENABLE}"; then
+    if [[ "${HOST_NGINX_SERVER_NAME}" != "_" ]]; then
+      info "前端入口: http://${HOST_NGINX_SERVER_NAME}/"
+    else
+      info "前端入口: http://<服务器IP>/"
+    fi
+  else
+    case "${FRONTEND_BIND_HOST}" in
+      127.0.0.1|localhost|::1)
+        info "前端入口仅本机可访问: http://${FRONTEND_BIND_HOST}:${FRONTEND_PORT}/"
+        ;;
+      *)
+        if [[ "${FRONTEND_PORT}" == "80" ]]; then
+          info "前端入口: http://<服务器IP>/"
+        else
+          info "前端入口: http://<服务器IP>:${FRONTEND_PORT}/"
+        fi
+        ;;
+    esac
+  fi
+
+  info "常用日志命令: docker compose logs -f frontend backend worker"
+  info "常用排查命令: docker compose ps"
+  warn "如果页面无法访问，优先检查安全组/防火墙、docker compose ps，以及 OPERATIONS_TROUBLESHOOTING.md"
 }

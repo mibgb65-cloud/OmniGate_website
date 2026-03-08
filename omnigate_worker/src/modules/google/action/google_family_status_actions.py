@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 class GoogleFamilyActions:
     """检查家庭组开通状态、成员邮箱、邀请剩余数量。"""
 
+    _LOG_PREFIX = "[Google家庭状态]"
+
     def __init__(self, browser_actions: BrowserActions | None = None) -> None:
         self.browser_actions = browser_actions or BrowserActions()
 
@@ -30,7 +32,7 @@ class GoogleFamilyActions:
             return round(time.monotonic() - flow_started_at, 2)
 
         def log_step(step_no: int, title: str) -> None:
-            logger.info("家庭组流程[%s/%s] %s", step_no, total_steps, title)
+            logger.info("%s 步骤=%s/%s | %s", self._LOG_PREFIX, step_no, total_steps, title)
 
         source_url = "https://myaccount.google.com/family/details?hl=en"
         log_step(1, "打开家庭组详情页")
@@ -43,7 +45,7 @@ class GoogleFamilyActions:
         current_url_str = current_url.lower()
 
         if "signin" in current_url_str or "challenge" in current_url_str:
-            logger.error(f"抓取被拦截！需要二次验证。当前所处 URL: {current_url}")
+            logger.error("%s 页面被拦截，需要二次验证 | current_url=%s", self._LOG_PREFIX, current_url)
             result = GoogleFamilyCheckResult(
                 source_url=str(current_url),
                 family_group_opened=False,
@@ -55,7 +57,8 @@ class GoogleFamilyActions:
                 members=[],
             )
             logger.warning(
-                "家庭组流程完成[%s/%s] auth_required=%s elapsed=%.2fs",
+                "%s 流程完成 | 步骤=%s/%s | auth_required=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 total_steps,
                 total_steps,
                 True,
@@ -67,7 +70,7 @@ class GoogleFamilyActions:
         summary = await self._extract_family_summary(page)
 
         if "error" in summary:
-            logger.error(f"JS 执行异常: {summary['error']}")
+            logger.error("%s JS 执行异常 | 原因=%s", self._LOG_PREFIX, summary["error"])
 
         has_get_started = bool(summary.get("has_get_started"))
         member_candidates = summary.get("member_candidates", [])
@@ -80,7 +83,7 @@ class GoogleFamilyActions:
 
         log_step(4, "抓取家庭成员详情")
         if family_group_opened and member_candidates:
-            logger.info(f"成功提取到 {len(member_candidates)} 个待抓取成员，开始并发抓取详情...")
+            logger.info("%s 已提取待抓取成员，开始并发抓取详情 | count=%s", self._LOG_PREFIX, len(member_candidates))
 
             seen_href: set[str] = set()
             # 限制并发数为 3，防止一次性打开太多标签页被 Google 封控或浏览器卡死
@@ -114,7 +117,8 @@ class GoogleFamilyActions:
             members=members,
         )
         logger.info(
-            "家庭组流程完成[%s/%s] opened=%s invitations_left=%s members=%s elapsed=%.2fs",
+            "%s 流程完成 | 步骤=%s/%s | opened=%s | invitations_left=%s | members=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             result.family_group_opened,
@@ -144,15 +148,19 @@ class GoogleFamilyActions:
                 )
 
                 logger.info(
-                    "Family member parsed | name=%s role=%s email=%s href=%s",
-                    info.member_name, info.member_role, info.member_email, href
+                    "%s 成员详情解析完成 | name=%s | role=%s | email=%s | href=%s",
+                    self._LOG_PREFIX,
+                    info.member_name,
+                    info.member_role,
+                    self._mask_email(info.member_email or ""),
+                    href,
                 )
 
                 # 已移除可能导致 nodriver 底层 WebSocket 崩溃的 await member_page.close()
 
                 return info
-            except Exception as e:
-                logger.error(f"抓取成员详情异常 {href}: {e}")
+            except Exception as exc:
+                logger.error("%s 抓取成员详情异常 | href=%s | 原因=%s", self._LOG_PREFIX, href, exc)
                 return None
 
     async def _wait_for_family_page_ready(self, page: Any) -> None:
@@ -242,8 +250,8 @@ class GoogleFamilyActions:
                 return json.loads(result_str)
             elif isinstance(result_str, dict):
                 return result_str
-        except Exception as e:
-            logger.error(f"提取家庭组概要失败: {e}")
+        except Exception as exc:
+            logger.error("%s 提取家庭组概要失败 | 原因=%s", self._LOG_PREFIX, exc)
         return {}
 
     async def _extract_member_detail(self, page: Any) -> dict[str, Any]:
@@ -282,8 +290,8 @@ class GoogleFamilyActions:
             elif isinstance(result_str, dict):
                 result_str["member_email"] = self._extract_email(result_str.get("member_email"))
                 return result_str
-        except Exception as e:
-            logger.error(f"提取成员详情失败: {e}")
+        except Exception as exc:
+            logger.error("%s 提取成员详情失败 | 原因=%s", self._LOG_PREFIX, exc)
         return {}
 
     async def _extract_member_detail_with_retry(self, page: Any) -> dict[str, Any]:
@@ -331,3 +339,16 @@ class GoogleFamilyActions:
             return str(result or "")
         except Exception:
             return ""
+
+    @staticmethod
+    def _mask_email(email: str) -> str:
+        normalized = (email or "").strip()
+        if "@" not in normalized:
+            return normalized
+
+        local_part, domain = normalized.split("@", 1)
+        if len(local_part) <= 4:
+            masked_local = f"{local_part[:1]}***"
+        else:
+            masked_local = f"{local_part[:2]}***{local_part[-2:]}"
+        return f"{masked_local}@{domain}"

@@ -1630,6 +1630,20 @@ onBeforeUnmount(() => {
                     {{ copiedField === 'password' ? '已复制' : '复制' }}
                   </el-button>
                 </div>
+                <div class="credential-item credential-item--totp">
+                  <span class="credential-key">2FA</span>
+                  <span class="credential-value">{{ toNullableText(detail?.totpSecret) }}</span>
+                  <el-button
+                    text
+                    class="credential-copy-btn"
+                    :class="{ 'is-copied': copiedField === 'totp-secret' }"
+                    :icon="copiedField === 'totp-secret' ? Check : CopyDocument"
+                    :disabled="!detail?.totpSecret"
+                    @click="handleCopyValue(detail?.totpSecret, 'TOTP 密钥', 'totp-secret')"
+                  >
+                    {{ copiedField === 'totp-secret' ? '已复制' : '复制' }}
+                  </el-button>
+                </div>
               </div>
               <p class="base-account-hint">主邮箱当前保持只读，辅助邮箱、地区、密码、TOTP 与备注可直接回写后端。</p>
             </div>
@@ -1698,7 +1712,6 @@ onBeforeUnmount(() => {
             <el-descriptions v-else :column="2" class="detail-descriptions">
               <el-descriptions-item label="辅助邮箱">{{ toNullableText(detail?.recoveryEmail) }}</el-descriptions-item>
               <el-descriptions-item label="地区">{{ toNullableText(detail?.region) }}</el-descriptions-item>
-              <el-descriptions-item label="TOTP 密钥">{{ toNullableText(detail?.totpSecret) }}</el-descriptions-item>
               <el-descriptions-item label="备注">{{ toNullableText(detail?.remark) }}</el-descriptions-item>
             </el-descriptions>
           </section>
@@ -2411,6 +2424,7 @@ onBeforeUnmount(() => {
 .credential-focus-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -2458,7 +2472,7 @@ onBeforeUnmount(() => {
 }
 
 .credential-item {
-  flex: 1 1 0;
+  flex: 1 1 220px;
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2479,6 +2493,11 @@ onBeforeUnmount(() => {
   border-color: rgba(245, 158, 11, 0.3);
 }
 
+.credential-item--totp {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.24);
+}
+
 .credential-key {
   font-weight: 800;
   white-space: nowrap;
@@ -2490,6 +2509,10 @@ onBeforeUnmount(() => {
 
 .credential-item--password .credential-key {
   color: #b45309;
+}
+
+.credential-item--totp .credential-key {
+  color: #047857;
 }
 
 .credential-value {

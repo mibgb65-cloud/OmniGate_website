@@ -74,6 +74,12 @@ const routes = [
         meta: { requiresAuth: true, title: '2FA 工具' },
       },
       {
+        path: '/settings/cloudmail',
+        name: 'cloudmail-settings',
+        component: () => import('@/views/system/CloudMailSettingsView.vue'),
+        meta: { requiresAuth: true, title: 'CloudMail 配置' },
+      },
+      {
         path: '/profile',
         name: 'profile',
         component: () => import('@/views/profile/ProfileView.vue'),

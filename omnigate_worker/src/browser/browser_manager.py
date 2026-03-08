@@ -16,6 +16,7 @@ from src.config.config import get_settings
 
 
 logger = logging.getLogger(__name__)
+LOG_PREFIX = "[浏览器管理]"
 
 
 def get_random_fingerprint() -> dict[str, Any]:
@@ -70,7 +71,7 @@ class BrowserManager:
 
         # 1. 抽取一套成体系的随机指纹
         fp = get_random_fingerprint()
-        logger.info(f"正在应用浏览器指纹: {fp['name']}")
+        logger.info("%s 正在应用浏览器指纹 | 指纹=%s", LOG_PREFIX, fp["name"])
 
         browser_args = [
             arg.strip() for arg in settings.BROWSER_ARGS.split(",")
@@ -133,7 +134,7 @@ class BrowserManager:
                 if isawaitable(result):
                     await result
         except Exception as exc:  # noqa: BLE001
-            logger.warning("浏览器关闭异常: %s", exc)
+            logger.warning("%s 浏览器关闭异常 | 原因=%s", LOG_PREFIX, exc)
         finally:
             # 每次任务完成后清理临时 user_data_dir，避免浏览器痕迹残留
             await self._cleanup_runtime_user_data_dir()
@@ -169,9 +170,9 @@ class BrowserManager:
             # 使用 tab 级别的连接发送指令
             await tab.send(command)
 
-            logger.info("底层硬件特征 (Platform/RAM/CPU) 深度注入成功")
-        except Exception as e:
-            logger.error(f"指纹深度注入失败: {e}")
+            logger.info("%s 底层硬件特征注入成功 | 项目=Platform/RAM/CPU", LOG_PREFIX)
+        except Exception as exc:
+            logger.error("%s 指纹深度注入失败 | 原因=%s", LOG_PREFIX, exc)
 
     @asynccontextmanager
     async def lifespan(self):
@@ -200,7 +201,7 @@ class BrowserManager:
             return configured, False
 
         runtime_dir = tempfile.mkdtemp(prefix="omnigate_nodriver_")
-        logger.info("创建浏览器临时目录: %s", runtime_dir)
+        logger.info("%s 创建浏览器临时目录 | 路径=%s", LOG_PREFIX, runtime_dir)
         return runtime_dir, True
 
     async def _cleanup_runtime_user_data_dir(self) -> None:
@@ -225,7 +226,7 @@ class BrowserManager:
             initial_delay=0.2,
         )
         if removed:
-            logger.info("已删除浏览器临时目录: %s", normalized_path)
+            logger.info("%s 已删除浏览器临时目录 | 路径=%s", LOG_PREFIX, normalized_path)
             return
 
         # 若 close 刚返回时目录仍被占用，后台继续做更长时间重试，避免主流程阻塞。
@@ -263,6 +264,6 @@ class BrowserManager:
             initial_delay=0.5,
         )
         if removed:
-            logger.info("浏览器临时目录已延迟清理: %s", path)
+            logger.info("%s 浏览器临时目录已延迟清理 | 路径=%s", LOG_PREFIX, path)
             return
-        logger.warning("删除浏览器临时目录失败: %s | error=%s", path, last_error)
+        logger.warning("%s 删除浏览器临时目录失败 | 路径=%s | 原因=%s", LOG_PREFIX, path, last_error)

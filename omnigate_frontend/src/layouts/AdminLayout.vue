@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, DataAnalysis, Key, Link, Monitor, User, UserFilled } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Key, Link, Monitor, Setting, User, UserFilled } from '@element-plus/icons-vue'
 
 import { logout } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
@@ -40,6 +40,11 @@ const navItems = [
     path: '/tools/2fa',
     title: '2FA 工具',
     icon: Key,
+  },
+  {
+    path: '/settings/cloudmail',
+    title: 'CloudMail 配置',
+    icon: Setting,
   },
   {
     path: '/profile',
@@ -95,6 +100,7 @@ const activeMenuPath = computed(() => {
   if (currentPath.startsWith('/github/accounts')) return '/github/accounts'
   if (currentPath.startsWith('/chatgpt/accounts')) return '/chatgpt/accounts'
   if (currentPath.startsWith('/tools/2fa')) return '/tools/2fa'
+  if (currentPath.startsWith('/settings/cloudmail')) return '/settings/cloudmail'
   if (currentPath.startsWith('/profile')) return '/profile'
   if (currentPath.startsWith('/dashboard')) return '/dashboard'
   return currentPath

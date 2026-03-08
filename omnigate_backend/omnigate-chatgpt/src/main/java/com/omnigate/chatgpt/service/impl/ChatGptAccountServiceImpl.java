@@ -164,6 +164,14 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
             entity.setSessionToken(normalize(updateDTO.getSessionToken()));
             changed = true;
         }
+        if (updateDTO.getTotpSecret() != null) {
+            String totpSecret = normalize(updateDTO.getTotpSecret());
+            if (!StringUtils.hasText(totpSecret)) {
+                throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "TOTP密钥不能为空字符串");
+            }
+            entity.setTotpSecret(totpSecret);
+            changed = true;
+        }
         if (updateDTO.getSubTier() != null) {
             String subTier = normalize(updateDTO.getSubTier());
             if (!StringUtils.hasText(subTier)) {
@@ -350,6 +358,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
         entity.setPassword(password);
 
         entity.setSessionToken(normalize(createDTO.getSessionToken()));
+        entity.setTotpSecret(normalize(createDTO.getTotpSecret()));
 
         String subTier = normalize(createDTO.getSubTier());
         entity.setSubTier(StringUtils.hasText(subTier) ? subTier : DEFAULT_SUB_TIER);
@@ -373,6 +382,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
         vo.setEmail(entity.getEmail());
         vo.setPassword(entity.getPassword());
         vo.setSessionToken(entity.getSessionToken());
+        vo.setTotpSecret(entity.getTotpSecret());
         vo.setSubTier(entity.getSubTier());
         vo.setAccountStatus(entity.getAccountStatus());
         vo.setExpireDate(entity.getExpireDate());

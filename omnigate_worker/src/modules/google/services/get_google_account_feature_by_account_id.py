@@ -43,6 +43,8 @@ class GetGoogleAccountFeatureByAccountIdService:
     3. 登录后默认保持页面打开，便于人工后续操作
     """
 
+    _LOG_PREFIX = "[Google账号特征]"
+
     def __init__(
         self,
         *,
@@ -91,7 +93,8 @@ class GetGoogleAccountFeatureByAccountIdService:
 
         def log_step(step_no: int, title: str) -> None:
             logger.info(
-                "服务流程[%s/%s] action=%s trace_id=%s %s",
+                "%s 步骤=%s/%s | action=%s | trace_id=%s | %s",
+                self._LOG_PREFIX,
                 step_no,
                 total_steps,
                 action,
@@ -102,12 +105,17 @@ class GetGoogleAccountFeatureByAccountIdService:
         req = self._normalize_params(params)
         log_step(1, f"读取账号凭据 account_id={req.google_account_id}")
         credential = await self._load_credential(req.google_account_id)
-        logger.info("账号信息读取完成 trace_id=%s email=%s", trace_id, credential.email)
+        logger.info(
+            "%s 账号凭据读取完成 | trace_id=%s | email=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            self._mask_email(credential.email),
+        )
 
         log_step(2, "启动浏览器")
         browser = await self.browser_actions.start_browser()
         self._last_browser = browser
-        logger.info("浏览器已启动 trace_id=%s", trace_id)
+        logger.info("%s 浏览器已启动 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         log_step(3, "执行登录")
         auth_params = GoogleAuthParams(
@@ -117,7 +125,8 @@ class GetGoogleAccountFeatureByAccountIdService:
         )
         login_result = await self.auth_actions.login_google(browser, auth_params)
         logger.info(
-            "登录动作执行结束 trace_id=%s ok=%s step=%s",
+            "%s 登录动作执行结束 | trace_id=%s | ok=%s | step=%s",
+            self._LOG_PREFIX,
             trace_id,
             login_result.get("ok"),
             login_result.get("step"),
@@ -140,9 +149,9 @@ class GetGoogleAccountFeatureByAccountIdService:
                     trace_id=trace_id,
                 )
         elif collect_features:
-            logger.warning("登录未成功，跳过订阅与家庭组信息抓取 trace_id=%s", trace_id)
+            logger.warning("%s 登录未成功，跳过账号特征抓取 | trace_id=%s", self._LOG_PREFIX, trace_id)
         else:
-            logger.info("collect_features=false，跳过特征抓取 trace_id=%s", trace_id)
+            logger.info("%s collect_features=false，跳过账号特征抓取 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         result: dict[str, Any] = {
             "account_id": credential.account_id,
@@ -161,7 +170,8 @@ class GetGoogleAccountFeatureByAccountIdService:
             log_step(6, "跳过手动等待（keep_page_open=false）")
 
         logger.info(
-            "服务流程完成[%s/%s] action=%s trace_id=%s account_id=%s elapsed=%.2fs",
+            "%s 服务流程完成 | 步骤=%s/%s | action=%s | trace_id=%s | account_id=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             action,
@@ -180,11 +190,11 @@ class GetGoogleAccountFeatureByAccountIdService:
         subscription_and_invite: dict[str, Any] | None = None
         family_status: dict[str, Any] | None = None
 
-        logger.info("开始顺序抓取账号特征 trace_id=%s：先订阅信息，再家庭组信息。", trace_id)
+        logger.info("%s 开始顺序抓取账号特征 | trace_id=%s | 顺序=订阅信息->家庭组信息", self._LOG_PREFIX, trace_id)
         try:
             sub_raw = await self.subscription_actions.get_onepro_subscription_status(browser)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("抓取订阅信息失败 trace_id=%s: %s", trace_id, exc)
+            logger.exception("%s 抓取订阅信息失败 | trace_id=%s", self._LOG_PREFIX, trace_id)
             subscription_and_invite = {"error": str(exc)}
         else:
             subscription_and_invite = self._to_plain_dict(sub_raw)
@@ -192,7 +202,7 @@ class GetGoogleAccountFeatureByAccountIdService:
         try:
             family_raw = await self.family_actions.check_family_group(browser)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("抓取家庭组信息失败 trace_id=%s: %s", trace_id, exc)
+            logger.exception("%s 抓取家庭组信息失败 | trace_id=%s", self._LOG_PREFIX, trace_id)
             family_status = {"error": str(exc)}
         else:
             family_status = self._to_plain_dict(family_raw)
@@ -211,13 +221,13 @@ class GetGoogleAccountFeatureByAccountIdService:
             subscription_and_invite=subscription_and_invite,
             family_status=family_status,
         )
-        logger.info("账号特征数据已写入业务表 trace_id=%s account_id=%s", trace_id, account_id)
+        logger.info("%s 账号特征数据已写入业务表 | trace_id=%s | account_id=%s", self._LOG_PREFIX, trace_id, account_id)
 
     async def close_browser(self) -> None:
         if self._last_browser is not None:
             await self.browser_actions.close_browser()
             self._last_browser = None
-            logger.info("浏览器已关闭。")
+            logger.info("%s 浏览器已关闭", self._LOG_PREFIX)
 
     async def close(self) -> None:
         await self.close_browser()
@@ -258,12 +268,12 @@ class GetGoogleAccountFeatureByAccountIdService:
         - max_wait_seconds>0: 等待固定秒数，便于自动化测试
         """
         start = time.monotonic()
-        logger.info("页面已保持打开，等待手动操作。")
+        logger.info("%s 页面已保持打开，等待手动操作", self._LOG_PREFIX)
         while True:
             if max_wait_seconds is not None and max_wait_seconds >= 0:
                 elapsed = time.monotonic() - start
                 if elapsed >= max_wait_seconds:
-                    logger.info("达到 max_wait_seconds=%s，结束等待。", max_wait_seconds)
+                    logger.info("%s 达到最大等待时间，结束手动等待 | max_wait_seconds=%s", self._LOG_PREFIX, max_wait_seconds)
                     return
             await asyncio.sleep(0.5)
 
@@ -303,3 +313,16 @@ class GetGoogleAccountFeatureByAccountIdService:
         if callable(model_dump):
             return model_dump()
         return {"value": str(value)}
+
+    @staticmethod
+    def _mask_email(email: str) -> str:
+        normalized = email.strip()
+        if "@" not in normalized:
+            return normalized
+
+        local_part, domain = normalized.split("@", 1)
+        if len(local_part) <= 4:
+            masked_local = f"{local_part[:1]}***"
+        else:
+            masked_local = f"{local_part[:2]}***{local_part[-2:]}"
+        return f"{masked_local}@{domain}"

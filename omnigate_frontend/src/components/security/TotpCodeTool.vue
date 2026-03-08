@@ -264,10 +264,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.tool-actions :deep(.el-button) {
-  margin-left: auto;
-}
-
 .inline-error {
   display: inline-flex;
   align-items: center;
@@ -296,6 +292,7 @@ onBeforeUnmount(() => {
   }
 
   .tool-actions :deep(.el-button) {
+    margin-left: 0;
     margin-left: 0;
   }
 }

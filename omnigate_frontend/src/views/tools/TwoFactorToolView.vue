@@ -1,5 +1,6 @@
 <script setup>
 import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
+import TotpBatchTool from '@/components/security/TotpBatchTool.vue'
 </script>
 
 <template>
@@ -12,9 +13,15 @@ import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
     </section>
 
     <section class="tool-grid">
-      <article class="tool-card">
-        <TotpCodeTool :show-use-account-secret-button="false" />
-      </article>
+      <div class="tool-stack">
+        <article class="tool-card">
+          <TotpCodeTool :show-use-account-secret-button="false" />
+        </article>
+
+        <article class="tool-card">
+          <TotpBatchTool />
+        </article>
+      </div>
 
       <article class="tool-card tips-card">
         <h3>使用说明</h3>
@@ -22,6 +29,8 @@ import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
           <li>仅支持 Base32 格式密钥（可包含空格/短横线）。</li>
           <li>验证码默认每 30 秒自动更新一次。</li>
           <li>可直接粘贴账号密钥进行计算。</li>
+          <li>批量模式支持每行 1 个密钥，自动生成对应验证码。</li>
+          <li>批量复制会按“行号 + 验证码”输出，便于逐条对应。</li>
           <li>本工具仅在浏览器本地计算，不会上传密钥。</li>
         </ul>
       </article>
@@ -57,6 +66,11 @@ import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
 .tool-grid {
   display: grid;
   grid-template-columns: 1.4fr 0.6fr;
+  gap: 14px;
+}
+
+.tool-stack {
+  display: grid;
   gap: 14px;
 }
 

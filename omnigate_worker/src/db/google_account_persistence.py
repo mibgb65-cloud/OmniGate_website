@@ -1,4 +1,4 @@
-"""Persist Google scraping results into existing business tables."""
+"""把 Google 抓取结果写回业务表。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import asyncpg
 
 
 class GoogleAccountPersistence:
-    """Map worker results to acc_google_* tables with snapshot-style updates."""
+    """把 worker 侧采集结果映射到 `acc_google_*` 系列表中。"""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
@@ -22,6 +22,15 @@ class GoogleAccountPersistence:
         subscription_and_invite: dict[str, Any] | None,
         family_status: dict[str, Any] | None,
     ) -> None:
+        """
+        持久化一次“订阅信息 + 家庭组信息”的快照。
+
+        这里采用快照式写法：
+        1. 先更新 acc_google_status 主表
+        2. 再全量替换家庭成员
+        3. 再同步邀请链接
+        """
+
         sub_payload = self._normalize_payload(subscription_and_invite)
         family_payload = self._normalize_payload(family_status)
         if sub_payload is None and family_payload is None:
@@ -46,6 +55,12 @@ class GoogleAccountPersistence:
         account_id: int,
         student_eligibility: dict[str, Any] | None,
     ) -> None:
+        """
+        持久化学生资格页面结果。
+
+        这里只关心 student_link 是否可用，以及哪些状态下需要主动清空旧链接。
+        """
+
         payload = self._normalize_payload(student_eligibility)
         if payload is None:
             return
@@ -53,6 +68,7 @@ class GoogleAccountPersistence:
         status = self._norm_text(payload.get("status")) or ""
         link = self._norm_text(payload.get("eligibility_link"))
 
+        # 某些状态说明用户已经不需要学生认证链接，此时要把旧值清掉。
         should_clear = status in {"已订阅", "已认证/未订阅"}
         if not link and not should_clear:
             return
@@ -88,6 +104,12 @@ class GoogleAccountPersistence:
         invite_result: dict[str, Any] | None,
         family_status: dict[str, Any] | None = None,
     ) -> None:
+        """
+        家庭组邀请成功后，复用家庭状态快照逻辑刷新本地数据。
+
+        这里只在邀请明确成功时才写库，避免失败结果污染当前状态。
+        """
+
         payload = self._normalize_payload(invite_result)
         if payload is None or not bool(payload.get("success")):
             return
@@ -110,6 +132,8 @@ class GoogleAccountPersistence:
         sub_payload: dict[str, Any] | None,
         family_payload: dict[str, Any] | None,
     ) -> None:
+        """把订阅、家庭组两个来源的字段合并后 upsert 到 `acc_google_status`。"""
+
         sub_tier: str | None = None
         family_status: int | None = None
         invite_link_status: int | None = None
@@ -126,6 +150,7 @@ class GoogleAccountPersistence:
             invited_count = self._clamp_invited_count(self._to_int(sub_payload.get("invitations_used")))
 
         if family_payload is not None:
+            # 家庭组页面拿到的成员数通常比订阅页更准，优先覆盖 invited_count。
             family_status = 1 if self._as_bool(family_payload.get("family_group_opened")) else 0
             family_member_count = self._clamp_invited_count(self._to_int(family_payload.get("member_count")))
             if family_member_count is not None:
@@ -181,6 +206,12 @@ class GoogleAccountPersistence:
         account_id: int,
         family_payload: dict[str, Any],
     ) -> None:
+        """
+        全量重建家庭成员表。
+
+        这里不是做 diff，而是先删后插，逻辑更直接，适合快照型同步。
+        """
+
         members_raw = family_payload.get("members")
         members = members_raw if isinstance(members_raw, list) else []
 
@@ -229,11 +260,14 @@ class GoogleAccountPersistence:
         account_id: int,
         sub_payload: dict[str, Any],
     ) -> None:
+        """按最新抓取结果重建邀请链接表。"""
+
         referral_link = self._norm_text(sub_payload.get("referral_link"))
         has_referral_invite = self._as_bool(sub_payload.get("has_referral_invite"))
         used_count = self._clamp_invited_count(self._to_int(sub_payload.get("invitations_used")))
         used_count = used_count if used_count is not None else 0
 
+        # 页面提示“有邀请能力”但没拿到链接时，不删除旧数据，避免误伤。
         if not referral_link and has_referral_invite:
             return
 
@@ -260,6 +294,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _normalize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        """过滤掉非 dict 或带 error 的结果，统一按“不可写库”处理。"""
+
         if not isinstance(payload, dict):
             return None
         if "error" in payload:
@@ -268,6 +304,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _map_sub_tier(sub_payload: dict[str, Any]) -> str:
+        """把页面抓到的订阅信息映射成库里使用的订阅档位枚举。"""
+
         if not bool(sub_payload.get("found_onepro")):
             return "NONE"
 
@@ -284,6 +322,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _map_member_role(raw_role: Any) -> int | None:
+        """把页面上的角色文本转换成业务表里的数字角色编码。"""
+
         if isinstance(raw_role, int):
             if raw_role in {1, 2}:
                 return raw_role
@@ -301,6 +341,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _to_int(value: Any) -> int | None:
+        """尽量把宽松输入转成 int；失败时返回 None。"""
+
         if value is None:
             return None
         if isinstance(value, bool):
@@ -312,12 +354,16 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _clamp_invited_count(value: int | None) -> int | None:
+        """邀请人数上限按当前业务约束收敛到 0~5。"""
+
         if value is None:
             return None
         return max(0, min(5, value))
 
     @staticmethod
     def _norm_text(value: Any) -> str | None:
+        """把任意值转成去首尾空格后的字符串；空字符串返回 None。"""
+
         if value is None:
             return None
         text = str(value).strip()
@@ -325,6 +371,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _as_bool(value: Any) -> bool:
+        """兼容常见字符串/数字布尔值，避免上游字段类型不稳定。"""
+
         if isinstance(value, bool):
             return value
         if value is None:
@@ -338,10 +386,13 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _parse_date_text(raw: str | None) -> date | None:
+        """尽量从页面文本里提取日期，兼容中英文和多种分隔符格式。"""
+
         text = (raw or "").strip()
         if not text:
             return None
 
+        # 去掉英文日期序数后缀，并把常见中文日期写法归一到更易解析的形式。
         text = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", text, flags=re.IGNORECASE)
         text = text.replace("，", ",").replace("年", "-").replace("月", "-").replace("日", "")
         text = re.sub(r"\s+", " ", text).strip()
@@ -358,6 +409,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _extract_date_candidates(text: str) -> list[str]:
+        """从一整段文本中尽量提取出像日期的片段，供后续逐个尝试解析。"""
+
         patterns = [
             r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}",
             r"\d{1,2}[-/.]\d{1,2}[-/.]\d{4}",
@@ -371,6 +424,8 @@ class GoogleAccountPersistence:
 
     @staticmethod
     def _try_parse_date(text: str) -> date | None:
+        """按预设格式列表顺序尝试解析日期。"""
+
         normalized = text.strip()
         if not normalized:
             return None

@@ -41,6 +41,7 @@ main() {
 
   [[ -f "${ENV_FILE}" ]] || fail "未找到 ${ENV_FILE}，请先执行部署脚本。"
   load_env
+  validate_env_runtime_settings
   validate_host_nginx_settings
 
   ensure_git_repo
@@ -60,6 +61,8 @@ main() {
 
   info "当前服务状态："
   compose_cmd ps
+
+  show_runtime_summary
 
   info "更新完成。"
 }

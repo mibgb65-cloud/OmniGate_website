@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 class GoogleSubscriptionActions:
     """Google One 订阅信息提取动作。"""
 
+    _LOG_PREFIX = "[Google订阅动作]"
+
     def __init__(self, browser_actions: BrowserActions | None = None) -> None:
         self.browser_actions = browser_actions or BrowserActions()
 
@@ -34,20 +36,20 @@ class GoogleSubscriptionActions:
             return round(time.monotonic() - flow_started_at, 2)
 
         def log_step(step_no: int, title: str) -> None:
-            logger.info("订阅流程[%s/%s] %s", step_no, total_steps, title)
+            logger.info("%s 步骤=%s/%s | %s", self._LOG_PREFIX, step_no, total_steps, title)
 
         log_step(1, "抓取订阅页信息")
         try:
             sub_res = await self._fetch_subscription_data(browser)
         except Exception:
-            logger.exception("订阅流程失败[1/%s] 抓取订阅页异常 elapsed=%.2fs", total_steps, elapsed_seconds())
+            logger.exception("%s 抓取订阅页异常 | 步骤=1/%s | elapsed=%.2fs", self._LOG_PREFIX, total_steps, elapsed_seconds())
             raise
 
         log_step(2, "抓取邀请页信息")
         try:
             inv_res = await self._fetch_invite_data(browser)
         except Exception:
-            logger.exception("订阅流程失败[2/%s] 抓取邀请页异常 elapsed=%.2fs", total_steps, elapsed_seconds())
+            logger.exception("%s 抓取邀请页异常 | 步骤=2/%s | elapsed=%.2fs", self._LOG_PREFIX, total_steps, elapsed_seconds())
             raise
 
         log_step(3, "合并结果并返回")
@@ -56,7 +58,8 @@ class GoogleSubscriptionActions:
             **inv_res.model_dump(),
         )
         logger.info(
-            "订阅流程完成[%s/%s] found_onepro=%s has_referral_invite=%s elapsed=%.2fs",
+            "%s 流程完成 | 步骤=%s/%s | found_onepro=%s | has_referral_invite=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             result.found_onepro,
@@ -67,9 +70,9 @@ class GoogleSubscriptionActions:
 
     async def _fetch_subscription_data(self, browser: Any) -> GoogleSubscriptionResult:
         url = "https://myaccount.google.com/subscriptions?hl=en"
-        logger.info("开始获取订阅信息，正在打开订阅页: %s", url)
+        logger.info("%s 打开订阅页 | url=%s", self._LOG_PREFIX, url)
         page = await self.browser_actions.open_page(browser=browser, url=url)
-        logger.info("订阅页打开后 URL: %s", await self._get_current_url(page))
+        logger.info("%s 订阅页打开完成 | current_url=%s", self._LOG_PREFIX, await self._get_current_url(page))
         await self._wait_for_subscription_page_ready(page)
 
         subscription_result = await self._extract_page_payload(page)
@@ -81,12 +84,12 @@ class GoogleSubscriptionActions:
 
     async def _fetch_invite_data(self, browser: Any) -> GoogleInviteResult:
         invite_url = "https://one.google.com/ai/invite?g1_landing_page=0"
-        logger.info("开始获取邀请信息，正在打开邀请页: %s", invite_url)
+        logger.info("%s 打开邀请页 | url=%s", self._LOG_PREFIX, invite_url)
 
         # 错峰打开，模拟人类习惯
         await asyncio.sleep(random.uniform(0.2, 0.5))
         invite_page = await self.browser_actions.open_page(browser=browser, url=invite_url)
-        logger.info("邀请页打开后 URL: %s", await self._get_current_url(invite_page))
+        logger.info("%s 邀请页打开完成 | current_url=%s", self._LOG_PREFIX, await self._get_current_url(invite_page))
 
         await self._wait_for_invite_page_ready(invite_page)
 
@@ -271,7 +274,7 @@ class GoogleSubscriptionActions:
                             res.get("isRedirected") or
                             res.get("hasNonEligibleText") or
                             i > 8):
-                            logger.info(f"邀请页就绪检测通过 (耗时约 {i * 0.4:.1f} 秒)")
+                            logger.info("%s 邀请页就绪检测通过 | elapsed≈%.1fs", self._LOG_PREFIX, i * 0.4)
                             return
             except Exception:
                 pass

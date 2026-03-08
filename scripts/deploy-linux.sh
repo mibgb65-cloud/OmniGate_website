@@ -20,6 +20,7 @@ main() {
   ensure_env_file
   load_env
   validate_env_secrets
+  validate_env_runtime_settings
   validate_host_nginx_settings
 
   info "校验 Docker Compose 配置。"
@@ -35,6 +36,8 @@ main() {
 
   info "当前服务状态："
   compose_cmd ps
+
+  show_runtime_summary
 
   info "部署完成。"
   info "查看日志可执行: docker compose logs -f backend"

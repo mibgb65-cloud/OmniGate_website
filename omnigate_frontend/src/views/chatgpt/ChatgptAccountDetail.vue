@@ -1,9 +1,8 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
-
+import { ArrowLeft, Check, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
 import {
   deleteChatgptAccount,
   getChatgptAccount,
@@ -13,7 +12,6 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
@@ -21,90 +19,80 @@ const statusUpdating = ref(false)
 const statusTarget = ref('')
 const detail = ref(null)
 const editFormRef = ref()
-
+const copiedField = ref('')
+let copyFeedbackTimer = null
 const accountId = computed(() => String(route.params.id || '').trim())
-
-const subTierOptions = [
-  { label: 'free', value: 'free' },
-  { label: 'plus', value: 'plus' },
-  { label: 'team', value: 'team' },
-  { label: 'go', value: 'go' },
-]
-
-const statusOptions = [
-  { label: 'active', value: 'active' },
-  { label: 'locked', value: 'locked' },
-  { label: 'banned', value: 'banned' },
-]
-
-const editForm = reactive({
-  email: '',
-  password: '',
-  sessionToken: '',
-  subTier: 'free',
-  accountStatus: 'active',
-  expireDate: '',
-})
+const subTierOptions = [{ label: 'Free', value: 'free' }, { label: 'Plus', value: 'plus' }, { label: 'Team', value: 'team' }, { label: 'Go', value: 'go' }]
+const statusOptions = [{ label: '可用', value: 'active' }, { label: '锁定', value: 'locked' }, { label: '封禁', value: 'banned' }]
+const editForm = reactive({ email: '', password: '', sessionToken: '', totpSecret: '', subTier: 'free', accountStatus: 'active', expireDate: '' })
 
 const formRules = {
-  email: [
-    { required: true, message: '请输入账号邮箱', trigger: 'blur' },
-    { type: 'email', message: '邮箱格式不正确', trigger: ['blur', 'change'] },
-  ],
-  password: [
-    {
-      trigger: ['blur', 'change'],
-      validator: (_rule, value, callback) => {
-        const normalized = normalizeCell(value)
-        if (normalized && normalized.length > 255) {
-          callback(new Error('密码长度不能超过255'))
-          return
-        }
-        callback()
-      },
+  email: [{ required: true, message: '请输入账号邮箱', trigger: 'blur' }, { type: 'email', message: '邮箱格式不正确', trigger: ['blur', 'change'] }],
+  password: [{
+    trigger: ['blur', 'change'],
+    validator: (_rule, value, callback) => {
+      const normalized = normalizeCell(value)
+      if (normalized && normalized.length > 255) return callback(new Error('密码长度不能超过255'))
+      callback()
     },
-  ],
-  sessionToken: [
-    {
-      trigger: ['blur', 'change'],
-      validator: (_rule, value, callback) => {
-        if (value && String(value).length > 1024) {
-          callback(new Error('SessionToken 长度不能超过1024'))
-          return
-        }
-        callback()
-      },
+  }],
+  sessionToken: [{
+    trigger: ['blur', 'change'],
+    validator: (_rule, value, callback) => {
+      if (value && String(value).length > 1024) return callback(new Error('SessionToken 长度不能超过1024'))
+      callback()
     },
-  ],
+  }],
+  totpSecret: [{
+    trigger: ['blur', 'change'],
+    validator: (_rule, value, callback) => {
+      const normalized = normalizeCell(value)
+      if (normalized && normalized.length > 255) return callback(new Error('TOTP 密钥长度不能超过255'))
+      callback()
+    },
+  }],
 }
 
 const summaryItems = computed(() => {
   const data = detail.value || {}
   return [
-    { label: '账号状态', value: toNullableText(data.accountStatus) },
-    { label: '订阅层级', value: toNullableText(data.subTier) },
-    { label: '到期日期', value: toNullableText(data.expireDate) },
-    { label: '更新时间', value: toNullableText(data.updatedAt) },
+    { label: '账号状态', value: formatAccountStatus(data.accountStatus), tone: resolveStatusTag(data.accountStatus) },
+    { label: '订阅层级', value: formatSubTier(data.subTier), tone: resolveTierTag(data.subTier) },
+    { label: '到期日期', value: toNullableText(data.expireDate), tone: 'neutral' },
+    { label: '更新时间', value: toNullableText(data.updatedAt), tone: 'neutral' },
   ]
 })
 
-function normalizeCell(value) {
-  const text = String(value ?? '').trim()
-  return text || undefined
-}
-
-function toNullableText(value) {
-  return value || '-'
-}
+function normalizeCell(value) { const text = String(value ?? '').trim(); return text || undefined }
+function toNullableText(value) { return value || '-' }
+function formatAccountStatus(status) { return ({ active: '可用', locked: '锁定', banned: '封禁' }[status]) || status || '-' }
+function formatSubTier(subTier) { return ({ free: 'Free', plus: 'Plus', team: 'Team', go: 'Go' }[subTier]) || subTier || '-' }
+function resolveStatusTag(status) { return status === 'active' ? 'success' : status === 'locked' ? 'warning' : status === 'banned' ? 'danger' : 'info' }
+function resolveTierTag(subTier) { return subTier === 'team' ? 'primary' : subTier === 'plus' ? 'success' : subTier === 'go' ? 'warning' : 'info' }
 
 async function handleCopyValue(value, label) {
   const text = String(value ?? '').trim()
-  if (!text) {
-    ElMessage.warning(`${label}为空，无法复制`)
-    return
+  if (!text) return ElMessage.warning(`${label}为空，无法复制`)
+  try { await navigator.clipboard.writeText(text); ElMessage.success(`${label}已复制`) } catch { ElMessage.error('复制失败，请手动复制') }
+}
+
+function markCopied(fieldKey) {
+  copiedField.value = fieldKey
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer)
   }
+  copyFeedbackTimer = setTimeout(() => {
+    copiedField.value = ''
+    copyFeedbackTimer = null
+  }, 1200)
+}
+
+async function handleCopyValueWithState(value, label, fieldKey) {
+  const text = String(value ?? '').trim()
+  if (!text) return ElMessage.warning(`${label}为空，无法复制`)
   try {
     await navigator.clipboard.writeText(text)
+    markCopied(fieldKey)
     ElMessage.success(`${label}已复制`)
   } catch {
     ElMessage.error('复制失败，请手动复制')
@@ -115,6 +103,7 @@ function fillEditForm(data) {
   editForm.email = data?.email || ''
   editForm.password = ''
   editForm.sessionToken = data?.sessionToken || ''
+  editForm.totpSecret = data?.totpSecret || ''
   editForm.subTier = data?.subTier || 'free'
   editForm.accountStatus = data?.accountStatus || 'active'
   editForm.expireDate = data?.expireDate || ''
@@ -123,37 +112,20 @@ function fillEditForm(data) {
 function buildUpdatePayload() {
   const payload = {}
   const source = detail.value || {}
-
   const currentEmail = normalizeCell(editForm.email) || ''
-  if (currentEmail && currentEmail !== (source.email || '')) {
-    payload.email = currentEmail
-  }
-
   const currentPassword = normalizeCell(editForm.password)
-  if (currentPassword) {
-    payload.password = currentPassword
-  }
-
   const currentToken = normalizeCell(editForm.sessionToken) || ''
-  if (currentToken !== (source.sessionToken || '')) {
-    payload.sessionToken = currentToken
-  }
-
+  const currentTotpSecret = normalizeCell(editForm.totpSecret) || ''
   const currentSubTier = normalizeCell(editForm.subTier) || ''
-  if (currentSubTier && currentSubTier !== (source.subTier || '')) {
-    payload.subTier = currentSubTier
-  }
-
   const currentStatus = normalizeCell(editForm.accountStatus) || ''
-  if (currentStatus && currentStatus !== (source.accountStatus || '')) {
-    payload.accountStatus = currentStatus
-  }
-
   const currentExpireDate = editForm.expireDate || ''
-  if (currentExpireDate && currentExpireDate !== (source.expireDate || '')) {
-    payload.expireDate = currentExpireDate
-  }
-
+  if (currentEmail && currentEmail !== (source.email || '')) payload.email = currentEmail
+  if (currentPassword) payload.password = currentPassword
+  if (currentToken !== (source.sessionToken || '')) payload.sessionToken = currentToken
+  if (currentTotpSecret !== (source.totpSecret || '')) payload.totpSecret = currentTotpSecret
+  if (currentSubTier && currentSubTier !== (source.subTier || '')) payload.subTier = currentSubTier
+  if (currentStatus && currentStatus !== (source.accountStatus || '')) payload.accountStatus = currentStatus
+  if (currentExpireDate && currentExpireDate !== (source.expireDate || '')) payload.expireDate = currentExpireDate
   return payload
 }
 
@@ -163,7 +135,6 @@ async function fetchDetail() {
     router.replace('/chatgpt/accounts')
     return
   }
-
   loading.value = true
   try {
     const detailData = await getChatgptAccount(accountId.value)
@@ -172,47 +143,28 @@ async function fetchDetail() {
   } catch {
     ElMessage.error('获取 ChatGPT 账号详情失败')
     router.replace('/chatgpt/accounts')
-  } finally {
-    loading.value = false
-  }
+  } finally { loading.value = false }
 }
 
 async function handleSave() {
   await editFormRef.value?.validate()
-
   const payload = buildUpdatePayload()
-  if (!Object.keys(payload).length) {
-    ElMessage.info('未检测到变更内容')
-    return
-  }
-
+  if (!Object.keys(payload).length) return ElMessage.info('未检测到变更内容')
   saving.value = true
-  try {
-    await updateChatgptAccount(accountId.value, payload)
-    ElMessage.success('账号信息已更新')
-    await fetchDetail()
-  } finally {
-    saving.value = false
-  }
+  try { await updateChatgptAccount(accountId.value, payload); ElMessage.success('账号信息已更新'); await fetchDetail() } finally { saving.value = false }
 }
 
-function handleReset() {
-  fillEditForm(detail.value || {})
-  editFormRef.value?.clearValidate()
-}
+function handleReset() { fillEditForm(detail.value || {}); editFormRef.value?.clearValidate() }
 
 async function handleQuickStatus(nextStatus) {
-  if (!detail.value?.id || !nextStatus || nextStatus === detail.value.accountStatus) {
-    return
-  }
-
+  if (!detail.value?.id || !nextStatus || nextStatus === detail.value.accountStatus) return
   statusUpdating.value = true
   statusTarget.value = nextStatus
   try {
     await updateChatgptAccountStatus(detail.value.id, { accountStatus: nextStatus })
     detail.value.accountStatus = nextStatus
     editForm.accountStatus = nextStatus
-    ElMessage.success(`状态已切换为 ${nextStatus}`)
+    ElMessage.success(`状态已切换为 ${formatAccountStatus(nextStatus)}`)
   } finally {
     statusUpdating.value = false
     statusTarget.value = ''
@@ -221,57 +173,38 @@ async function handleQuickStatus(nextStatus) {
 
 async function handleDelete() {
   if (!detail.value?.id) return
-
-  try {
-    await ElMessageBox.confirm(`确认删除 ChatGPT 账号「${detail.value.email || detail.value.id}」吗？`, '危险操作确认', {
-      type: 'warning',
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      confirmButtonClass: 'el-button--danger',
-    })
-  } catch {
-    return
-  }
-
+  try { await ElMessageBox.confirm(`确认删除 ChatGPT 账号「${detail.value.email || detail.value.id}」吗？`, '危险操作确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }) } catch { return }
   deleting.value = true
-  try {
-    await deleteChatgptAccount(detail.value.id)
-    ElMessage.success('账号已删除')
-    await router.replace('/chatgpt/accounts')
-  } finally {
-    deleting.value = false
-  }
+  try { await deleteChatgptAccount(detail.value.id); ElMessage.success('账号已删除'); await router.replace('/chatgpt/accounts') } finally { deleting.value = false }
 }
 
 onMounted(fetchDetail)
+
+onBeforeUnmount(() => {
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer)
+    copyFeedbackTimer = null
+  }
+})
 </script>
 
 <template>
   <div class="detail-page" v-loading="loading">
     <section class="detail-hero">
-      <div>
-        <h1>ChatGPT 账号详情</h1>
-        <p>{{ detail?.email || '-' }}</p>
+      <div class="hero-copy">
+        <el-button text :icon="ArrowLeft" class="back-link" @click="router.push('/chatgpt/accounts')">返回账号池</el-button>
+        <span class="eyebrow">ChatGPT Account Detail</span>
+        <h1>{{ detail?.email || '账号详情' }}</h1>
+        <div class="hero-tags">
+          <el-tag :type="resolveStatusTag(detail?.accountStatus)" effect="dark">{{ formatAccountStatus(detail?.accountStatus) }}</el-tag>
+          <el-tag :type="resolveTierTag(detail?.subTier)" effect="plain">{{ formatSubTier(detail?.subTier) }}</el-tag>
+          <el-tag effect="plain">到期：{{ toNullableText(detail?.expireDate) }}</el-tag>
+        </div>
       </div>
       <div class="hero-actions">
-        <div class="status-switch">
-          <el-button
-            v-for="item in statusOptions"
-            :key="item.value"
-            :type="editForm.accountStatus === item.value ? 'primary' : 'default'"
-            :plain="editForm.accountStatus !== item.value"
-            size="small"
-            :loading="statusUpdating && statusTarget === item.value"
-            @click="handleQuickStatus(item.value)"
-          >
-            {{ item.label }}
-          </el-button>
-        </div>
-        <div class="control-buttons">
-          <el-button :icon="Refresh" @click="fetchDetail">刷新</el-button>
-          <el-button type="danger" plain :icon="Delete" :loading="deleting" @click="handleDelete">删除账号</el-button>
-          <el-button type="primary" :icon="ArrowLeft" @click="router.push('/chatgpt/accounts')">返回列表</el-button>
-        </div>
+        <el-button :icon="Refresh" @click="fetchDetail">刷新</el-button>
+        <el-button :icon="CopyDocument" @click="handleCopyValueWithState(detail?.email, '邮箱', 'hero-email')">复制邮箱</el-button>
+        <el-button type="danger" plain :icon="Delete" :loading="deleting" @click="handleDelete">删除账号</el-button>
       </div>
     </section>
 
@@ -283,316 +216,162 @@ onMounted(fetchDetail)
     </section>
 
     <section class="content-grid">
-      <article class="panel-card">
-        <header class="panel-header">
-          <h3>编辑账号信息</h3>
-          <p>密码留空即保持原值；SessionToken 支持清空后保存。</p>
-        </header>
-
-        <el-form ref="editFormRef" :model="editForm" :rules="formRules" label-width="110px">
-          <el-form-item label="账号邮箱" prop="email">
-            <el-input v-model="editForm.email" placeholder="name@example.com" />
-          </el-form-item>
-          <el-form-item label="登录密码" prop="password">
-            <el-input v-model="editForm.password" type="password" show-password placeholder="留空表示不修改" />
-          </el-form-item>
-          <el-form-item label="SessionToken" prop="sessionToken">
-            <el-input v-model="editForm.sessionToken" type="textarea" :rows="3" placeholder="可留空" />
-          </el-form-item>
-          <el-form-item label="订阅层级">
-            <el-select v-model="editForm.subTier" placeholder="选择订阅层级">
-              <el-option v-for="item in subTierOptions" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="账号状态">
-            <el-select v-model="editForm.accountStatus" placeholder="选择账号状态">
-              <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="到期日期">
-            <el-date-picker v-model="editForm.expireDate" type="date" value-format="YYYY-MM-DD" placeholder="可选" />
-          </el-form-item>
+      <article class="surface-card">
+        <div class="panel-head">
+          <div>
+            <h2>编辑账号信息</h2>
+            <p>密码留空表示不修改；SessionToken 支持直接覆盖或清空。</p>
+          </div>
+        </div>
+        <el-form ref="editFormRef" :model="editForm" :rules="formRules" label-position="top" class="dialog-form">
+          <div class="form-grid">
+            <el-form-item label="账号邮箱" prop="email"><el-input v-model="editForm.email" placeholder="name@example.com" /></el-form-item>
+            <el-form-item label="登录密码" prop="password"><el-input v-model="editForm.password" type="password" show-password placeholder="留空表示不修改" /></el-form-item>
+            <el-form-item label="2FA / TOTP 密钥" prop="totpSecret"><el-input v-model="editForm.totpSecret" placeholder="可选，留空表示不修改" /></el-form-item>
+            <el-form-item label="订阅层级"><el-select v-model="editForm.subTier"><el-option v-for="item in subTierOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+            <el-form-item label="账号状态"><el-select v-model="editForm.accountStatus"><el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+            <el-form-item label="到期日期"><el-date-picker v-model="editForm.expireDate" type="date" value-format="YYYY-MM-DD" placeholder="可选" /></el-form-item>
+            <el-form-item label="SessionToken" prop="sessionToken" class="span-2"><el-input v-model="editForm.sessionToken" type="textarea" :rows="4" placeholder="可留空" /></el-form-item>
+          </div>
         </el-form>
-
-        <div class="form-footer">
+        <div class="dialog-footer">
           <el-button @click="handleReset">重置</el-button>
           <el-button type="primary" :loading="saving" @click="handleSave">保存修改</el-button>
         </div>
       </article>
 
-      <article class="panel-card">
-        <header class="panel-header">
-          <h3>元数据</h3>
-        </header>
-
-        <el-descriptions :column="1" class="detail-descriptions">
-          <el-descriptions-item label="账号 ID">{{ toNullableText(detail?.id) }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱">
-            <div class="copyable-field">
-              <span class="copy-text">{{ toNullableText(detail?.email) }}</span>
-              <el-button
-                text
-                class="copy-btn"
-                :icon="CopyDocument"
-                :disabled="!detail?.email"
-                @click="handleCopyValue(detail?.email, '邮箱')"
-              >
-                复制
-              </el-button>
+      <aside class="side-stack">
+        <article class="surface-card">
+          <div class="panel-head compact">
+            <div>
+              <h2>快速状态切换</h2>
+              <p>常用状态直接切，不必先改表单再保存。</p>
             </div>
-          </el-descriptions-item>
-          <el-descriptions-item label="密码">
-            <div class="copyable-field">
-              <span class="copy-text">{{ toNullableText(detail?.password) }}</span>
-              <el-button
-                text
-                class="copy-btn"
-                :icon="CopyDocument"
-                :disabled="!detail?.password"
-                @click="handleCopyValue(detail?.password, '密码')"
-              >
-                复制
-              </el-button>
-            </div>
-          </el-descriptions-item>
-          <el-descriptions-item label="订阅层级">{{ toNullableText(detail?.subTier) }}</el-descriptions-item>
-          <el-descriptions-item label="账号状态">{{ toNullableText(detail?.accountStatus) }}</el-descriptions-item>
-          <el-descriptions-item label="到期日期">{{ toNullableText(detail?.expireDate) }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ toNullableText(detail?.createdAt) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ toNullableText(detail?.updatedAt) }}</el-descriptions-item>
-        </el-descriptions>
-
-        <div class="token-viewer">
-          <div class="token-viewer-header">
-            <p>SessionToken 预览</p>
-            <el-button
-              text
-              class="copy-btn"
-              :icon="CopyDocument"
-              :disabled="!detail?.sessionToken"
-              @click="handleCopyValue(detail?.sessionToken, 'SessionToken')"
-            >
-              复制
-            </el-button>
           </div>
-          <div class="token-content">{{ toNullableText(detail?.sessionToken) }}</div>
-        </div>
-      </article>
+          <div class="status-switch">
+            <el-button v-for="item in statusOptions" :key="item.value" :type="editForm.accountStatus === item.value ? 'primary' : 'default'" :plain="editForm.accountStatus !== item.value" :loading="statusUpdating && statusTarget === item.value" @click="handleQuickStatus(item.value)">{{ item.label }}</el-button>
+          </div>
+        </article>
+
+        <article class="surface-card">
+          <div class="panel-head compact">
+            <div>
+              <h2>复制与凭据</h2>
+              <p>把常用字段收拢到一起，减少来回找位置。</p>
+            </div>
+          </div>
+          <div class="copy-block">
+            <div class="copy-block-head">
+              <span>邮箱</span>
+              <el-button
+                text
+                class="copy-action-btn copy-action-btn--email"
+                :class="{ 'is-copied': copiedField === 'email' }"
+                :icon="copiedField === 'email' ? Check : CopyDocument"
+                @click="handleCopyValueWithState(detail?.email, '邮箱', 'email')"
+              >
+                {{ copiedField === 'email' ? '已复制' : '复制邮箱' }}
+              </el-button>
+            </div>
+            <strong>{{ toNullableText(detail?.email) }}</strong>
+          </div>
+          <div class="copy-block">
+            <div class="copy-block-head">
+              <span>密码</span>
+              <el-button
+                text
+                class="copy-action-btn copy-action-btn--password"
+                :class="{ 'is-copied': copiedField === 'password' }"
+                :icon="copiedField === 'password' ? Check : CopyDocument"
+                @click="handleCopyValueWithState(detail?.password, '密码', 'password')"
+              >
+                {{ copiedField === 'password' ? '已复制' : '复制密码' }}
+              </el-button>
+            </div>
+            <strong>{{ toNullableText(detail?.password) }}</strong>
+          </div>
+          <div class="copy-block">
+            <div class="copy-block-head">
+              <span>2FA / TOTP</span>
+              <el-button
+                text
+                class="copy-action-btn copy-action-btn--totp"
+                :class="{ 'is-copied': copiedField === 'totp-secret' }"
+                :icon="copiedField === 'totp-secret' ? Check : CopyDocument"
+                @click="handleCopyValueWithState(detail?.totpSecret, '2FA 密钥', 'totp-secret')"
+              >
+                {{ copiedField === 'totp-secret' ? '已复制' : '复制 2FA' }}
+              </el-button>
+            </div>
+            <strong>{{ toNullableText(detail?.totpSecret) }}</strong>
+          </div>
+          <div class="copy-block">
+            <div class="copy-block-head">
+              <span>SessionToken</span>
+              <el-button
+                text
+                class="copy-action-btn copy-action-btn--token"
+                :class="{ 'is-copied': copiedField === 'session-token' }"
+                :icon="copiedField === 'session-token' ? Check : CopyDocument"
+                @click="handleCopyValueWithState(detail?.sessionToken, 'SessionToken', 'session-token')"
+              >
+                {{ copiedField === 'session-token' ? '已复制' : '复制令牌' }}
+              </el-button>
+            </div>
+            <div class="token-box">{{ toNullableText(detail?.sessionToken) }}</div>
+          </div>
+        </article>
+
+        <article class="surface-card">
+          <div class="panel-head compact">
+            <div>
+              <h2>元数据</h2>
+            </div>
+          </div>
+          <div class="meta-list">
+            <div><span>账号 ID</span><strong>{{ toNullableText(detail?.id) }}</strong></div>
+            <div><span>创建时间</span><strong>{{ toNullableText(detail?.createdAt) }}</strong></div>
+            <div><span>更新时间</span><strong>{{ toNullableText(detail?.updatedAt) }}</strong></div>
+          </div>
+        </article>
+      </aside>
     </section>
   </div>
 </template>
 
 <style scoped>
-.detail-page {
-  display: grid;
-  gap: 16px;
-}
-
-.detail-hero {
-  border-radius: 14px;
-  padding: 20px;
-  background:
-    radial-gradient(circle at 86% 18%, rgba(251, 146, 60, 0.34), transparent 34%),
-    linear-gradient(136deg, #7c2d12 0%, #9a3412 54%, #b45309 100%);
-  color: #f8fbff;
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  align-items: center;
-}
-
-.detail-hero h1 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.detail-hero p {
-  margin: 6px 0 0;
-  color: rgba(248, 251, 255, 0.84);
-  font-size: 0.92rem;
-}
-
-.hero-actions {
-  display: grid;
-  gap: 8px;
-  justify-items: end;
-}
-
-.status-switch,
-.control-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-card {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid rgba(23, 37, 48, 0.08);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  padding: 14px 16px;
-}
-
-.summary-card span {
-  color: var(--og-slate-600);
-  font-size: 0.8rem;
-}
-
-.summary-card strong {
-  margin-top: 6px;
-  display: block;
-  color: var(--og-slate-900);
-  font-family: 'Fira Code', 'Space Grotesk', monospace;
-  font-size: 1.04rem;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 16px;
-}
-
-.panel-card {
-  border-radius: 12px;
-  border: 1px solid rgba(23, 37, 48, 0.08);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  background: #ffffff;
-  padding: 18px;
-}
-
-.panel-header {
-  margin-bottom: 12px;
-}
-
-.panel-header h3 {
-  margin: 0;
-  color: var(--og-slate-900);
-  font-size: 1rem;
-}
-
-.panel-header p {
-  margin: 6px 0 0;
-  color: var(--og-slate-600);
-  font-size: 0.82rem;
-}
-
-:deep(.detail-descriptions .el-descriptions__table) {
-  border-collapse: separate;
-  border-spacing: 0 8px;
-}
-
-:deep(.detail-descriptions .el-descriptions__cell) {
-  border: none !important;
-  padding: 10px 12px;
-}
-
-:deep(.detail-descriptions .el-descriptions__label.el-descriptions__cell) {
-  width: 108px;
-  color: var(--og-slate-600);
-  font-weight: 700;
-  background: #f1f5f9;
-  border-radius: 10px 0 0 10px;
-}
-
-:deep(.detail-descriptions .el-descriptions__content.el-descriptions__cell) {
-  color: var(--og-slate-900);
-  background: #f8fafc;
-  border-radius: 0 10px 10px 0;
-}
-
-.copyable-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.copy-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.copy-btn {
-  flex-shrink: 0;
-  padding: 0;
-}
-
-.form-footer {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.token-viewer {
-  margin-top: 12px;
-}
-
-.token-viewer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.token-viewer p {
-  margin: 0 0 8px;
-  color: var(--og-slate-600);
-  font-size: 0.82rem;
-}
-
-.token-content {
-  border-radius: 10px;
-  border: 1px dashed rgba(23, 37, 48, 0.2);
-  background: #f8fafc;
-  color: var(--og-slate-800);
-  font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: 0.8rem;
-  line-height: 1.6;
-  padding: 10px;
-  word-break: break-all;
-}
-
-@media (max-width: 1080px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 780px) {
-  .detail-hero {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .hero-actions {
-    width: 100%;
-    justify-items: start;
-  }
-
-  .status-switch,
-  .control-buttons {
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 640px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.detail-page{display:grid;gap:18px}
+.detail-hero,.surface-card{border-radius:22px}
+.detail-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:26px;background:radial-gradient(circle at top right,rgba(45,212,191,.16),transparent 28%),radial-gradient(circle at 14% 20%,rgba(249,115,22,.2),transparent 24%),linear-gradient(140deg,#111827 0%,#172033 44%,#1f2937 100%);color:#f8fafc;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 64px rgba(15,23,42,.22)}
+.eyebrow{display:inline-flex;margin-top:10px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.09);color:rgba(255,255,255,.72);font-size:.74rem;letter-spacing:.06em;text-transform:uppercase}
+.back-link{padding-left:0;color:rgba(226,232,240,.9)}.hero-copy h1{margin:12px 0 0;font-family:'Space Grotesk',sans-serif;font-size:1.9rem;line-height:1.08}
+.hero-tags,.hero-actions,.status-switch,.dialog-footer{display:flex;flex-wrap:wrap;gap:10px}.hero-tags{margin-top:14px}
+.surface-card{padding:22px;border:1px solid rgba(148,163,184,.18);background:radial-gradient(circle at top right,rgba(45,212,191,.08),transparent 24%),linear-gradient(180deg,rgba(255,255,255,.96),rgba(248,250,252,.96));box-shadow:0 18px 48px rgba(15,23,42,.08)}
+.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.summary-card{padding:16px;border-radius:18px;background:#fff;border:1px solid rgba(148,163,184,.16)}
+.summary-card span{display:block;color:#64748b;font-size:.8rem}.summary-card strong{display:block;margin-top:8px;font-family:'Fira Code','Space Grotesk',monospace;color:#0f172a;font-size:1.1rem}
+.content-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:18px}.side-stack,.dialog-form,.meta-list{display:grid;gap:16px}
+.panel-head{display:flex;justify-content:space-between;gap:16px;margin-bottom:16px}.panel-head.compact{margin-bottom:14px}.panel-head h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.08rem;color:#0f172a}.panel-head p{margin:6px 0 0;color:#475569;line-height:1.6}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}.span-2{grid-column:1/-1}
+.copy-block{display:grid;gap:10px;padding:16px;border-radius:18px;background:linear-gradient(180deg,#fff,#f8fafc);border:1px solid rgba(148,163,184,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.85)}
+.copy-block span{color:#64748b;font-size:.8rem}
+.copy-block strong{font-family:'Fira Code','Consolas',monospace;color:#0f172a;word-break:break-all;font-size:.94rem;line-height:1.55}
+.copy-block-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.copy-action-btn{height:32px;padding:0 12px;border-radius:999px;color:#334155;background:rgba(15,23,42,.05);border:1px solid rgba(148,163,184,.24);font-weight:700;transition:transform 180ms cubic-bezier(.22,1,.36,1),background-color 180ms ease,color 180ms ease,border-color 180ms ease,box-shadow 180ms ease}
+.copy-action-btn:hover{color:#0f172a;background:rgba(15,23,42,.08);border-color:rgba(100,116,139,.34)}
+.copy-action-btn:active{transform:translateY(1px) scale(.98)}
+.copy-action-btn.is-copied{color:#065f46;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.28);box-shadow:0 8px 18px rgba(16,185,129,.16)}
+.copy-action-btn--email{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.18);color:#1d4ed8}
+.copy-action-btn--email:hover{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.26)}
+.copy-action-btn--password{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.2);color:#b45309}
+.copy-action-btn--password:hover{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.28)}
+.copy-action-btn--totp{background:rgba(8,145,178,.1);border-color:rgba(8,145,178,.2);color:#0f766e}
+.copy-action-btn--totp:hover{background:rgba(8,145,178,.14);border-color:rgba(8,145,178,.28)}
+.copy-action-btn--token{background:rgba(15,118,110,.1);border-color:rgba(15,118,110,.18);color:#0f766e}
+.copy-action-btn--token:hover{background:rgba(15,118,110,.14);border-color:rgba(15,118,110,.26)}
+.token-box{max-height:140px;overflow:auto;padding:10px;border-radius:12px;background:#f8fafc;border:1px dashed rgba(148,163,184,.4);font-family:'Fira Code','Consolas',monospace;font-size:.8rem;color:#0f172a;word-break:break-all}
+.meta-list>div{display:grid;gap:6px;padding:12px 0;border-bottom:1px solid rgba(148,163,184,.16)}.meta-list>div:last-child{border-bottom:none}.meta-list span{color:#64748b;font-size:.8rem}.meta-list strong{color:#0f172a;font-weight:600;word-break:break-all}
+@media (max-width:1080px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.content-grid{grid-template-columns:1fr}}
+@media (max-width:760px){.detail-hero,.panel-head,.dialog-footer,.copy-block-head{flex-direction:column;align-items:flex-start}.hero-actions{width:100%}.summary-grid,.form-grid{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.copy-action-btn{transition:none}}
 </style>

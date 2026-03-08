@@ -182,6 +182,7 @@ cp .env.example .env
 ```env
 POSTGRES_PASSWORD=your-strong-password
 OMNIGATE_JWT_SECRET=your-random-secret-with-32-chars-at-least
+FRONTEND_API_BASE_URL=/
 FRONTEND_PORT=80
 ```
 
@@ -215,6 +216,7 @@ bash scripts/update_deployed.sh
 ```
 
 更详细的 Linux 服务器部署说明见 [DEPLOY_ALMALINUX_DOCKER.md](./DEPLOY_ALMALINUX_DOCKER.md)。
+常见故障定位见 [OPERATIONS_TROUBLESHOOTING.md](./OPERATIONS_TROUBLESHOOTING.md)。
 
 ### Option B: Local Development
 
@@ -317,6 +319,7 @@ python -m src.main
 - Worker 启动顺序已和后端健康检查、数据库迁移顺序对齐
 
 部署文档见 [DEPLOY_ALMALINUX_DOCKER.md](./DEPLOY_ALMALINUX_DOCKER.md)。
+运维排障文档见 [OPERATIONS_TROUBLESHOOTING.md](./OPERATIONS_TROUBLESHOOTING.md)。
 
 ## Roadmap
 
@@ -332,7 +335,7 @@ python -m src.main
 - [ ] 为前端、后端、Worker 增加基础自动化测试
 - [ ] 为 Docker 部署补充生产环境 HTTPS 示例配置
 - [ ] 增加任务失败重试、告警与运行指标说明
-- [ ] 完善示例环境变量、部署脚本和运维排障文档
+- [x] 完善示例环境变量、部署脚本和运维排障文档
 
 ## Contributing
 
@@ -352,6 +355,7 @@ python -m src.main
 ## Documentation
 
 - [DEPLOY_ALMALINUX_DOCKER.md](./DEPLOY_ALMALINUX_DOCKER.md)
+- [OPERATIONS_TROUBLESHOOTING.md](./OPERATIONS_TROUBLESHOOTING.md)
 - [python端设计.md](./python端设计.md)
 - [后端设计文档.md](./omnigate_backend/后端设计文档.md)
 

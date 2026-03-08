@@ -10,6 +10,7 @@ from redis.exceptions import ResponseError
 
 
 logger = logging.getLogger(__name__)
+LOG_PREFIX = "[RedisStream]"
 
 
 @dataclass(slots=True)
@@ -114,8 +115,8 @@ class RedisStreamClient:
             if self._is_xautoclaim_unsupported(exc):
                 self._supports_xautoclaim = False
                 logger.warning(
-                    "Redis server does not support XAUTOCLAIM. Pending-message auto-claim is disabled. "
-                    "Upgrade Redis to 6.2+ to enable this capability."
+                    "%s 当前 Redis 不支持 XAUTOCLAIM，已关闭 pending message 自动认领 | 建议=升级到 Redis 6.2+",
+                    LOG_PREFIX,
                 )
                 return start_id, []
             raise

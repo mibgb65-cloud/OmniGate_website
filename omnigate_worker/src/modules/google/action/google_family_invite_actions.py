@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class GoogleFamilyInviteActions:
     """自动化邀请邮箱加入 Google 家庭组的动作。"""
 
+    _LOG_PREFIX = "[Google家庭邀请动作]"
+
     def __init__(self, browser_actions: BrowserActions | None = None) -> None:
         self.browser_actions = browser_actions or BrowserActions()
 
@@ -36,11 +38,12 @@ class GoogleFamilyInviteActions:
             return round(time.monotonic() - flow_started_at, 2)
 
         def log_step(step_no: int, title: str) -> None:
-            logger.info("家庭邀请流程[%s/%s] %s", step_no, total_steps, title)
+            logger.info("%s 步骤=%s/%s | %s", self._LOG_PREFIX, step_no, total_steps, title)
 
         def log_failed(step_no: int, reason: str) -> None:
             logger.warning(
-                "家庭邀请流程失败[%s/%s] %s elapsed=%.2fs",
+                "%s 流程失败 | 步骤=%s/%s | 原因=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 step_no,
                 total_steps,
                 reason,
@@ -58,7 +61,7 @@ class GoogleFamilyInviteActions:
 
         if page_status == "auth":
             current_url = await page.evaluate("() => window.location.href")
-            logger.error(f"抓取被拦截！需要二次验证。当前所处 URL: {current_url}")
+            logger.error("%s 页面被拦截，需要二次验证 | current_url=%s", self._LOG_PREFIX, current_url)
             log_failed(2, "auth_required")
             return GoogleFamilyInviteResult(
                 success=False,
@@ -103,10 +106,10 @@ class GoogleFamilyInviteActions:
                     await asyncio.sleep(0.3)
 
                 if not input_el:
-                    logger.warning(f"第 {attempt + 1} 次尝试：未找到输入框。")
+                    logger.warning("%s 未找到输入框 | 尝试=%s", self._LOG_PREFIX, attempt + 1)
                     continue
 
-                logger.info(f"第 {attempt + 1} 次尝试：正在激活输入框并粘贴邮箱...")
+                logger.info("%s 正在激活输入框并粘贴邮箱 | 尝试=%s", self._LOG_PREFIX, attempt + 1)
                 # 优化：通过 JS 发送更完整的事件序列来模拟真实输入
                 paste_script = f"""
                 (() => {{
@@ -174,13 +177,13 @@ class GoogleFamilyInviteActions:
                     inject_success = True
                     break
                 else:
-                    logger.warning(f"第 {attempt + 1} 次输入后 Send 按钮未被激活，准备清空重试...")
+                    logger.warning("%s Send 按钮未激活，准备清空重试 | 尝试=%s", self._LOG_PREFIX, attempt + 1)
                     clear_script = f"document.querySelector('{input_selector}').value = '';"
                     await page.evaluate(clear_script)
                     await asyncio.sleep(random.uniform(0.8, 1.5))
 
-            except Exception as e:
-                logger.error(f"第 {attempt + 1} 次尝试交互时发生底层异常: {e}")
+            except Exception as exc:
+                logger.error("%s 输入交互异常 | 尝试=%s | 原因=%s", self._LOG_PREFIX, attempt + 1, exc)
                 await asyncio.sleep(1.0)
 
         if not inject_success:
@@ -201,10 +204,11 @@ class GoogleFamilyInviteActions:
 
         if is_success:
             logger.info(
-                "家庭邀请流程完成[%s/%s] success=true target_email=%s elapsed=%.2fs",
+                "%s 流程完成 | 步骤=%s/%s | success=true | target_email=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 total_steps,
                 total_steps,
-                target_email,
+                self._mask_email(target_email),
                 elapsed_seconds(),
             )
             return GoogleFamilyInviteResult(success=True, message="invitation_sent")
@@ -307,3 +311,16 @@ class GoogleFamilyInviteActions:
                 pass
             await asyncio.sleep(0.2)  # 缩短轮询间隔，提高响应速度
         return False
+
+    @staticmethod
+    def _mask_email(email: str) -> str:
+        normalized = (email or "").strip()
+        if "@" not in normalized:
+            return normalized
+
+        local_part, domain = normalized.split("@", 1)
+        if len(local_part) <= 4:
+            masked_local = f"{local_part[:1]}***"
+        else:
+            masked_local = f"{local_part[:2]}***{local_part[-2:]}"
+        return f"{masked_local}@{domain}"

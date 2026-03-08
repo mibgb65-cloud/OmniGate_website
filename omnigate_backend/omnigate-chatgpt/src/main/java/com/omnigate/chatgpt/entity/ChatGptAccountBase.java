@@ -43,6 +43,12 @@ public class ChatGptAccountBase extends BaseEntity {
     private String sessionToken;
 
     /**
+     * 二次验证 TOTP 密钥（加密存储）。
+     */
+    @TableField(typeHandler = AesEncryptTypeHandler.class)
+    private String totpSecret;
+
+    /**
      * 订阅层级：free, plus, team, go。
      */
     private String subTier;

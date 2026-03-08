@@ -17,6 +17,7 @@ from src.redis_io import RedisStreamClient, TaskStreamMessage
 
 
 logger = logging.getLogger(__name__)
+LOG_PREFIX = "[Worker节点]"
 
 
 class WorkerNode:
@@ -59,9 +60,10 @@ class WorkerNode:
 
         logger.info(
             (
-                "Worker node started. stream=%s group=%s consumer=%s concurrency=%s "
-                "claim_idle_ms=%s claim_count=%s claim_interval_ms=%s"
+                "%s Worker 已启动 | stream=%s | group=%s | consumer=%s | concurrency=%s "
+                "| claim_idle_ms=%s | claim_count=%s | claim_interval_ms=%s"
             ),
+            LOG_PREFIX,
             self._settings.task_stream,
             self._settings.task_stream_group,
             self._consumer_name,
@@ -134,7 +136,7 @@ class WorkerNode:
             )
             self._pending_claim_cursor = next_cursor
         except Exception:  # noqa: BLE001
-            logger.exception("Failed to auto-claim pending task messages.")
+            logger.exception("%s 自动认领 pending 消息失败", LOG_PREFIX)
             self._next_pending_claim_at = now + max(0.5, self._settings.task_stream_claim_interval_ms / 1000.0)
             return []
 
@@ -144,7 +146,8 @@ class WorkerNode:
 
         self._next_pending_claim_at = now
         logger.info(
-            "Auto-claimed pending task messages. consumer=%s count=%s next_cursor=%s",
+            "%s 已自动认领 pending 消息 | consumer=%s | count=%s | next_cursor=%s",
+            LOG_PREFIX,
             self._consumer_name,
             len(claimed_messages),
             self._pending_claim_cursor,
@@ -160,12 +163,12 @@ class WorkerNode:
         except asyncio.CancelledError:
             return
         if exc:
-            logger.exception("Task worker crashed: %s", exc)
+            logger.exception("%s 单个 task worker 异常退出", LOG_PREFIX)
 
     async def _process_message(self, message: TaskStreamMessage) -> None:
         task_run_id = self._parse_task_run_id(message.fields.get("task_run_id"))
         if task_run_id is None:
-            logger.error("Skip message with invalid task_run_id. message_id=%s", message.message_id)
+            logger.error("%s 跳过无效 task_run_id 的消息 | message_id=%s", LOG_PREFIX, message.message_id)
             await self._ack_message(message)
             return
 
@@ -176,12 +179,12 @@ class WorkerNode:
 
     async def _handle_task(self, *, task_run_id: UUID, message: TaskStreamMessage) -> None:
         if not await self._state_manager.mark_running(task_run_id, self._settings.worker_instance_id):
-            logger.info("Task skipped due to non-queued status. task_run_id=%s", task_run_id)
+            logger.info("%s 任务状态不是 queued，跳过执行 | task_run_id=%s", LOG_PREFIX, task_run_id)
             return
 
         task_record = await self._state_manager.get_task_run(task_run_id)
         if task_record is None:
-            logger.error("task_runs record not found. task_run_id=%s", task_run_id)
+            logger.error("%s 未找到 task_runs 记录 | task_run_id=%s", LOG_PREFIX, task_run_id)
             return
 
         task_payload = self._extract_task_payload(message.fields)
@@ -247,7 +250,7 @@ class WorkerNode:
             await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Task execution failed. task_run_id=%s", task_run_id)
+            logger.exception("%s 任务执行异常 | task_run_id=%s", LOG_PREFIX, task_run_id)
             await self._mark_failed_and_schedule_retry(
                 task_run_id=task_run_id,
                 root_run_id=task_record.root_run_id,
@@ -282,7 +285,7 @@ class WorkerNode:
             return
 
         if not task_payload:
-            logger.warning("Retry run created without payload requeue. next_run_id=%s", next_run_id)
+            logger.warning("%s 已创建重试 run，但缺少 payload 无法重新入队 | next_run_id=%s", LOG_PREFIX, next_run_id)
             await self._sync_feature_status_if_needed(task_payload, self.ACCOUNT_SYNC_STATUS_FAILED)
             return
 
@@ -317,7 +320,7 @@ class WorkerNode:
             "created_at": created_at,
         }
         await self._stream_client.add_task_message(stream=self._settings.task_stream, fields=fields)
-        logger.info("Retry task requeued. task_run_id=%s", next_run_id)
+        logger.info("%s 重试任务已重新入队 | task_run_id=%s", LOG_PREFIX, next_run_id)
 
     def _on_retry_enqueue_done(self, task: asyncio.Task[None]) -> None:
         self._retry_enqueue_tasks.discard(task)
@@ -326,7 +329,7 @@ class WorkerNode:
         except asyncio.CancelledError:
             return
         if exc:
-            logger.exception("Retry requeue task crashed: %s", exc)
+            logger.exception("%s 重试入队任务异常退出", LOG_PREFIX)
 
     async def _log_sink(self, payload: dict[str, Any]) -> None:
         await self._stream_client.add_log_event(
@@ -410,7 +413,8 @@ class WorkerNode:
             await self._state_manager.set_google_account_sync_status(account_id, sync_status)
         except Exception:  # noqa: BLE001
             logger.exception(
-                "Failed to update google account sync status. account_id=%s sync_status=%s",
+                "%s 更新 Google 账号同步状态失败 | account_id=%s | sync_status=%s",
+                LOG_PREFIX,
                 account_id,
                 sync_status,
             )

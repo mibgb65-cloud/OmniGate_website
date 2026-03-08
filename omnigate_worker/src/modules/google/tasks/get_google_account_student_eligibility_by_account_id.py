@@ -25,7 +25,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdTask(BaseTask):
         started_at = time.monotonic()
         step_total = 3
         await self.log_info(
-            "Task accepted",
+            "已接收 Google 学生资格抓取任务",
             step=1,
             step_total=step_total,
             context={"payload": payload, "action": self.action_name, "trace_id": trace_id},
@@ -42,7 +42,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdTask(BaseTask):
             )
         except ValidationError as exc:
             await self.log_error(
-                "Invalid payload for student eligibility task",
+                "Google 学生资格抓取任务参数校验失败",
                 step=2,
                 step_total=step_total,
                 error_code="VALIDATION_ERROR",
@@ -56,7 +56,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdTask(BaseTask):
 
         elapsed = round(time.monotonic() - started_at, 2)
         await self.log_info(
-            "Start service execution",
+            "开始执行 Google 学生资格抓取服务",
             step=2,
             step_total=step_total,
             context={
@@ -82,7 +82,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdTask(BaseTask):
             sanitized = self._sanitize_result(result)
             elapsed = round(time.monotonic() - started_at, 2)
             await self.log_info(
-                "Task finished",
+                "Google 学生资格抓取任务执行完成",
                 step=3,
                 step_total=step_total,
                 context={"action": self.action_name, "trace_id": trace_id, "elapsed_seconds": elapsed},
@@ -94,13 +94,13 @@ class GetGoogleAccountStudentEligibilityByAccountIdTask(BaseTask):
             }
         except Exception as exc:  # noqa: BLE001
             logging.getLogger(__name__).exception(
-                "Student eligibility task failed. task_id=%s google_account_id=%s",
+                "Google 学生资格抓取任务执行失败 | task_id=%s | google_account_id=%s",
                 self.task_id,
                 params.google_account_id,
             )
             elapsed = round(time.monotonic() - started_at, 2)
             await self.log_error(
-                "Service execution failed",
+                "Google 学生资格抓取服务执行失败",
                 step=3,
                 step_total=step_total,
                 error_code="SERVICE_ERROR",

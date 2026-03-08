@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class GoogleAuthActions:
     """Google 鉴权动作集合 (基于 nodriver 动态轮询 + 真实物理模拟)。"""
 
+    _LOG_PREFIX = "[Google登录]"
+
     def __init__(
             self,
             browser_actions: BrowserActions | None = None,
@@ -41,11 +43,12 @@ class GoogleAuthActions:
             return round(time.monotonic() - flow_started_at, 2)
 
         def log_step(step_no: int, title: str) -> None:
-            logger.info("登录流程[%s/%s] %s", step_no, total_steps, title)
+            logger.info("%s 步骤=%s/%s | %s", self._LOG_PREFIX, step_no, total_steps, title)
 
         def build_failed_result(step_no: int, step_name: str, reason: str) -> dict[str, Any]:
             logger.warning(
-                "登录流程失败[%s/%s] step=%s reason=%s elapsed=%.2fs",
+                "%s 流程失败 | 步骤=%s/%s | step=%s | 原因=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 step_no,
                 total_steps,
                 step_name,
@@ -171,7 +174,8 @@ class GoogleAuthActions:
 
         if login_ok:
             logger.info(
-                "登录流程完成[%s/%s] 成功 current_url=%s elapsed=%.2fs",
+                "%s 流程完成且确认成功 | 步骤=%s/%s | current_url=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 total_steps,
                 total_steps,
                 str(current_url)[:80],
@@ -179,7 +183,8 @@ class GoogleAuthActions:
             )
         else:
             logger.warning(
-                "登录流程完成[%s/%s] 未确认成功 current_url=%s elapsed=%.2fs",
+                "%s 流程完成但未确认成功 | 步骤=%s/%s | current_url=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 total_steps,
                 total_steps,
                 str(current_url)[:80],
@@ -239,7 +244,7 @@ class GoogleAuthActions:
                     if is_visible:
                         if delay_range:
                             delay = random.uniform(delay_range[0], delay_range[1])
-                            logger.debug(f"准备点击 {selector}，拟人化等待 {delay:.2f} 秒...")
+                            logger.debug("%s 准备点击元素 | selector=%s | delay=%.2fs", self._LOG_PREFIX, selector, delay)
                             await asyncio.sleep(delay)
 
                         await self._simulate_physical_click(page, el)
@@ -261,7 +266,7 @@ class GoogleAuthActions:
                         if is_visible:
                             if delay_range:
                                 delay = random.uniform(delay_range[0], delay_range[1])
-                                logger.debug(f"准备点击文本按钮 '{text}'，拟人化等待 {delay:.2f} 秒...")
+                                logger.debug("%s 准备点击文本按钮 | text=%s | delay=%.2fs", self._LOG_PREFIX, text, delay)
                                 await asyncio.sleep(delay)
 
                             await self._simulate_physical_click(page, el)
@@ -313,10 +318,10 @@ class GoogleAuthActions:
                 click_count=1
             ))
 
-            logger.debug(f"执行了物理点击，坐标: ({target_x:.2f}, {target_y:.2f})")
+            logger.debug("%s 已执行物理点击 | x=%.2f | y=%.2f", self._LOG_PREFIX, target_x, target_y)
 
-        except Exception as e:
-            logger.warning(f"物理点击模拟失败，回退到默认 click: {e}")
+        except Exception as exc:
+            logger.warning("%s 物理点击模拟失败，回退到默认 click | 原因=%s", self._LOG_PREFIX, exc)
             await el.click()
 
     async def _wait_for_login_success(self, page: Any, timeout: int = 15) -> bool:

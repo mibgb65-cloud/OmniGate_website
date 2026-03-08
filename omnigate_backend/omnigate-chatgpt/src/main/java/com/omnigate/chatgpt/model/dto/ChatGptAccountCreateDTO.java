@@ -36,6 +36,12 @@ public class ChatGptAccountCreateDTO {
     private String sessionToken;
 
     /**
+     * 二次验证 TOTP 密钥。
+     */
+    @Size(max = 255, message = "TOTP密钥长度不能超过255")
+    private String totpSecret;
+
+    /**
      * 订阅层级：free, plus, team, go。
      */
     @Pattern(regexp = "free|plus|team|go", message = "订阅层级仅支持 free/plus/team/go")

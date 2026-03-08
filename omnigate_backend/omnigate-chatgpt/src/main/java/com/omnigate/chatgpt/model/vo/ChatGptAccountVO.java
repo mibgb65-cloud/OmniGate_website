@@ -33,6 +33,11 @@ public class ChatGptAccountVO {
     private String sessionToken;
 
     /**
+     * 二次验证 TOTP 密钥。
+     */
+    private String totpSecret;
+
+    /**
      * 订阅层级。
      */
     private String subTier;

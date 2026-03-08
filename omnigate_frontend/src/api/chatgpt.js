@@ -16,6 +16,30 @@ export function createChatgptAccountsBatch(data) {
   })
 }
 
+export function dispatchChatgptBatchRegisterTask(data) {
+  return request({
+    url: '/api/chatgpt/tasks/batch-register',
+    method: 'post',
+    data,
+  })
+}
+
+export function getChatgptTaskStatus(taskRunId, config = {}) {
+  return request({
+    url: `/api/chatgpt/tasks/${taskRunId}`,
+    method: 'get',
+    ...config,
+  })
+}
+
+export function getChatgptTaskStatusByRootRunId(rootRunId, config = {}) {
+  return request({
+    url: `/api/chatgpt/tasks/root/${rootRunId}`,
+    method: 'get',
+    ...config,
+  })
+}
+
 export function pageChatgptAccounts(params) {
   return request({
     url: '/api/chatgpt/accounts',

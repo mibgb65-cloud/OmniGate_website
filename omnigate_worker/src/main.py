@@ -56,7 +56,7 @@ def main() -> None:
     try:
         asyncio.run(run_worker())
     except KeyboardInterrupt:
-        logging.getLogger(__name__).info("Worker interrupted by user.")
+        logging.getLogger(__name__).info("[Worker入口] 收到用户中断信号，准备退出")
 
 
 if __name__ == "__main__":

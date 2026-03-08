@@ -37,6 +37,8 @@ class GoogleAccountCredential:
 class GetGoogleAccountStudentEligibilityByAccountIdService:
     """Service flow: load account -> login -> fetch student eligibility."""
 
+    _LOG_PREFIX = "[Google学生资格]"
+
     def __init__(
         self,
         *,
@@ -82,7 +84,8 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
 
         def log_step(step_no: int, title: str) -> None:
             logger.info(
-                "服务流程[%s/%s] action=%s trace_id=%s %s",
+                "%s 步骤=%s/%s | action=%s | trace_id=%s | %s",
+                self._LOG_PREFIX,
                 step_no,
                 total_steps,
                 action,
@@ -94,9 +97,16 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
         log_step(1, f"读取账号凭据 account_id={req.google_account_id}")
 
         credential = await self._load_credential(req.google_account_id)
+        logger.info(
+            "%s 账号凭据读取完成 | trace_id=%s | email=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            self._mask_email(credential.email),
+        )
         log_step(2, "启动浏览器")
         browser = await self.browser_actions.start_browser()
         self._last_browser = browser
+        logger.info("%s 浏览器已启动 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         log_step(3, "执行登录")
         auth_params = GoogleAuthParams(
@@ -105,6 +115,13 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
             twofa=credential.totp_secret,
         )
         login_result = await self.auth_actions.login_google(browser, auth_params)
+        logger.info(
+            "%s 登录动作执行结束 | trace_id=%s | ok=%s | step=%s",
+            self._LOG_PREFIX,
+            trace_id,
+            login_result.get("ok"),
+            login_result.get("step"),
+        )
 
         student_eligibility: dict[str, Any] | None = None
         if login_result.get("ok"):
@@ -112,7 +129,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
             try:
                 raw = await self.student_actions.get_student_eligibility(browser)
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Fetch student eligibility failed trace_id=%s: %s", trace_id, exc)
+                logger.exception("%s 抓取学生资格失败 | trace_id=%s", self._LOG_PREFIX, trace_id)
                 student_eligibility = {"error": str(exc)}
             else:
                 student_eligibility = self._to_plain_dict(raw)
@@ -124,7 +141,7 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
                         trace_id=trace_id,
                     )
         else:
-            logger.warning("Login not successful, skip student eligibility fetch. trace_id=%s", trace_id)
+            logger.warning("%s 登录未成功，跳过学生资格抓取 | trace_id=%s", self._LOG_PREFIX, trace_id)
 
         result: dict[str, Any] = {
             "account_id": credential.account_id,
@@ -142,7 +159,8 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
             log_step(6, "跳过手动等待（keep_page_open=false）")
 
         logger.info(
-            "服务流程完成[%s/%s] action=%s trace_id=%s account_id=%s elapsed=%.2fs",
+            "%s 服务流程完成 | 步骤=%s/%s | action=%s | trace_id=%s | account_id=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             action,
@@ -163,13 +181,13 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
             account_id=account_id,
             student_eligibility=student_eligibility,
         )
-        logger.info("学生资格数据已写入业务表 trace_id=%s account_id=%s", trace_id, account_id)
+        logger.info("%s 学生资格数据已写入业务表 | trace_id=%s | account_id=%s", self._LOG_PREFIX, trace_id, account_id)
 
     async def close_browser(self) -> None:
         if self._last_browser is not None:
             await self.browser_actions.close_browser()
             self._last_browser = None
-            logger.info("Browser closed.")
+            logger.info("%s 浏览器已关闭", self._LOG_PREFIX)
 
     async def close(self) -> None:
         await self.close_browser()
@@ -205,12 +223,12 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
 
     async def _wait_for_manual_operation(self, *, max_wait_seconds: int | None) -> None:
         start = time.monotonic()
-        logger.info("Browser is kept open for manual operation.")
+        logger.info("%s 页面已保持打开，等待手动操作", self._LOG_PREFIX)
         while True:
             if max_wait_seconds is not None and max_wait_seconds >= 0:
                 elapsed = time.monotonic() - start
                 if elapsed >= max_wait_seconds:
-                    logger.info("Reach max_wait_seconds=%s, stop waiting.", max_wait_seconds)
+                    logger.info("%s 达到最大等待时间，结束手动等待 | max_wait_seconds=%s", self._LOG_PREFIX, max_wait_seconds)
                     return
             await asyncio.sleep(0.5)
 
@@ -249,3 +267,16 @@ class GetGoogleAccountStudentEligibilityByAccountIdService:
         if callable(model_dump):
             return model_dump()
         return {"value": str(value)}
+
+    @staticmethod
+    def _mask_email(email: str) -> str:
+        normalized = email.strip()
+        if "@" not in normalized:
+            return normalized
+
+        local_part, domain = normalized.split("@", 1)
+        if len(local_part) <= 4:
+            masked_local = f"{local_part[:1]}***"
+        else:
+            masked_local = f"{local_part[:2]}***{local_part[-2:]}"
+        return f"{masked_local}@{domain}"

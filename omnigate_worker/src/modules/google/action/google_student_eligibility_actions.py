@@ -20,6 +20,7 @@ class GoogleStudentEligibilityActions:
     """自动化检测 Google 学生资格状态与验证链接。"""
 
     STUDENT_ENTRY_URL = "https://one.google.com/ai-student"
+    _LOG_PREFIX = "[Google学生资格动作]"
 
     def __init__(self, browser_actions: BrowserActions | None = None) -> None:
         self.browser_actions = browser_actions or BrowserActions()
@@ -36,7 +37,7 @@ class GoogleStudentEligibilityActions:
             return round(time.monotonic() - flow_started_at, 2)
 
         def log_step(step_no: int, title: str) -> None:
-            logger.info("学生资格流程[%s/%s] %s", step_no, total_steps, title)
+            logger.info("%s 步骤=%s/%s | %s", self._LOG_PREFIX, step_no, total_steps, title)
 
         retries = max(int(max_retries), 0)
         for attempt in range(retries + 1):
@@ -53,7 +54,7 @@ class GoogleStudentEligibilityActions:
             log_step(2, f"{round_text} 等待页面关键元素渲染")
             is_ready = await self._wait_for_page_ready(page)
             if not is_ready:
-                logger.warning("页面在预期时间内未能呈现出完整的学生优惠特征，将尝试强行提取...")
+                logger.warning("%s 页面未在预期时间内呈现完整学生优惠特征，改为强制提取", self._LOG_PREFIX)
 
             log_step(3, f"{round_text} 提取学生资格状态与链接")
             result = await self._extract_student_eligibility_result(
@@ -69,11 +70,12 @@ class GoogleStudentEligibilityActions:
                     and self._is_invalid_sheerid_link(result.eligibility_link)
                     and attempt < retries
             ):
-                logger.warning("提取到无效 SheerID 链接（verificationId 为空），准备重新加载页面重试...")
+                logger.warning("%s 提取到无效 SheerID 链接，准备重新加载页面重试", self._LOG_PREFIX)
                 continue
 
             logger.info(
-                "学生资格流程完成[%s/%s] status=%s link=%s retries=%s elapsed=%.2fs",
+                "%s 流程完成 | 步骤=%s/%s | status=%s | link=%s | retries=%s | elapsed=%.2fs",
+                self._LOG_PREFIX,
                 total_steps,
                 total_steps,
                 result.status,
@@ -91,7 +93,8 @@ class GoogleStudentEligibilityActions:
             retries=retries,
         )
         logger.warning(
-            "学生资格流程完成[%s/%s] status=%s retries=%s elapsed=%.2fs",
+            "%s 流程完成 | 步骤=%s/%s | status=%s | retries=%s | elapsed=%.2fs",
+            self._LOG_PREFIX,
             total_steps,
             total_steps,
             result.status,
@@ -233,9 +236,9 @@ class GoogleStudentEligibilityActions:
             payload_raw = await page.evaluate(script)
             payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
             if payload.get("error"):
-                logger.error(f"JS 执行错误: {payload['error']}")
+                logger.error("%s JS 执行错误 | 原因=%s", self._LOG_PREFIX, payload["error"])
         except Exception as exc:
-            logger.warning("提取学生资格状态失败，返回未知状态: %s", exc)
+            logger.warning("%s 提取学生资格状态失败，返回未知状态 | 原因=%s", self._LOG_PREFIX, exc)
             return GoogleStudentEligibilityResult(
                 status="未知状态",
                 eligibility_link=fallback_url,
@@ -258,7 +261,7 @@ class GoogleStudentEligibilityActions:
         resolved_candidate = urljoin(current_url or fallback_url, candidate_link) if candidate_link else None
 
         if has_subscribed:
-            logger.info("解析状态: 已订阅")
+            logger.info("%s 解析状态=已订阅", self._LOG_PREFIX)
             return GoogleStudentEligibilityResult(
                 status="已订阅",
                 eligibility_link=None,
@@ -267,7 +270,7 @@ class GoogleStudentEligibilityActions:
                 retries=retries,
             )
         if has_student_offer:
-            logger.info("解析状态: 已认证/未订阅")
+            logger.info("%s 解析状态=已认证/未订阅", self._LOG_PREFIX)
             return GoogleStudentEligibilityResult(
                 status="已认证/未订阅",
                 eligibility_link=None,
@@ -276,7 +279,7 @@ class GoogleStudentEligibilityActions:
                 retries=retries,
             )
         if resolved_candidate:
-            logger.info(f"解析状态: 未订阅 (需验证) - 抓取到链接: {resolved_candidate}")
+            logger.info("%s 解析状态=未订阅(需验证) | 链接=%s", self._LOG_PREFIX, resolved_candidate)
             return GoogleStudentEligibilityResult(
                 status="未订阅 (需验证)",
                 eligibility_link=resolved_candidate,
@@ -285,7 +288,7 @@ class GoogleStudentEligibilityActions:
                 retries=retries,
             )
 
-        logger.warning("解析状态: 未知状态 (页面中没有识别到任何特征)")
+        logger.warning("%s 解析状态=未知状态 | 原因=页面中没有识别到任何特征", self._LOG_PREFIX)
         return GoogleStudentEligibilityResult(
             status="未知状态",
             eligibility_link=current_url or fallback_url,

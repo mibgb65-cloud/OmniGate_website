@@ -4,7 +4,7 @@ services:
       context: ./omnigate_frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/}
         VITE_TASK_LOG_WS_URL: ${FRONTEND_TASK_LOG_WS_URL:-/ws/task-log}
     restart: unless-stopped
     depends_on:
