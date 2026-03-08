@@ -2,13 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Check, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, CopyDocument, Delete, Download, Refresh } from '@element-plus/icons-vue'
 import {
   deleteChatgptAccount,
   getChatgptAccount,
   updateChatgptAccount,
   updateChatgptAccountStatus,
 } from '@/api/chatgpt'
+import { buildExportFilename, downloadTextFile, formatChatgptAccountLine } from '@/utils/accountExport'
 
 const route = useRoute()
 const router = useRouter()
@@ -178,6 +179,15 @@ async function handleDelete() {
   try { await deleteChatgptAccount(detail.value.id); ElMessage.success('账号已删除'); await router.replace('/chatgpt/accounts') } finally { deleting.value = false }
 }
 
+function handleExportAccount() {
+  if (!detail.value) return ElMessage.warning('暂无可导出的 ChatGPT 账号')
+  downloadTextFile({
+    filename: buildExportFilename(`chatgpt-account-${detail.value?.email || detail.value?.id}`),
+    content: formatChatgptAccountLine(detail.value),
+  })
+  ElMessage.success('ChatGPT 账号已导出')
+}
+
 onMounted(fetchDetail)
 
 onBeforeUnmount(() => {
@@ -202,6 +212,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="hero-actions">
+        <el-button :icon="Download" @click="handleExportAccount">导出账号</el-button>
         <el-button :icon="Refresh" @click="fetchDetail">刷新</el-button>
         <el-button :icon="CopyDocument" @click="handleCopyValueWithState(detail?.email, '邮箱', 'hero-email')">复制邮箱</el-button>
         <el-button type="danger" plain :icon="Delete" :loading="deleting" @click="handleDelete">删除账号</el-button>

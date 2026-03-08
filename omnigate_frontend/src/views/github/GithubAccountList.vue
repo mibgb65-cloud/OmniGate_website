@@ -2,9 +2,15 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { Delete, Download, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 
 import { deleteGithubAccount, importGithubAccounts, pageGithubAccounts } from '@/api/github'
+import {
+  buildExportFilename,
+  downloadTextFile,
+  fetchAllPagedRecords,
+  formatGithubAccountLine,
+} from '@/utils/accountExport'
 
 const loading = ref(false)
 const rows = ref([])
@@ -15,6 +21,7 @@ const importRawText = ref('')
 const importMode = ref('text')
 const deletingId = ref(null)
 const importForm = reactive(createGithubImportForm())
+const selectedRows = ref([])
 
 const filterForm = reactive({
   username: '',
@@ -44,6 +51,11 @@ const dashboardStats = computed(() => {
     { label: '已配置代理', value: proxyCount },
   ]
 })
+const exportButtonLabel = computed(() => (
+  selectedRows.value.length
+    ? `导出已选（${selectedRows.value.length}）`
+    : '导出全部'
+))
 
 function resolveStatusTag(status) {
   if (status === 'active') return 'success'
@@ -147,6 +159,7 @@ async function fetchGithubAccounts() {
     })
 
     rows.value = pageData?.records || []
+    selectedRows.value = []
     pager.total = Number(pageData?.total || 0)
     pager.current = Number(pageData?.current || pager.current)
     pager.size = Number(pageData?.size || pager.size)
@@ -168,13 +181,40 @@ function handleReset() {
   fetchGithubAccounts()
 }
 
-function handleRowClick(row) {
+function handleRowClick(row, column) {
+  if (column?.type === 'selection' || column?.label === '操作') return
   if (!row?.id) return
   router.push(`/github/accounts/${row.id}`)
 }
 
 function resolveRowClass() {
   return 'clickable-row'
+}
+
+function handleSelectionChange(selection) {
+  selectedRows.value = selection || []
+}
+
+async function handleExportAccounts() {
+  const exportRows = selectedRows.value.length
+    ? [...selectedRows.value]
+    : await fetchAllPagedRecords(pageGithubAccounts, {
+      username: filterForm.username || undefined,
+      accountStatus: filterForm.accountStatus,
+      proxyIp: filterForm.proxyIp || undefined,
+    })
+
+  if (!exportRows.length) {
+    ElMessage.warning('没有可导出的 GitHub 账号')
+    return
+  }
+
+  const content = exportRows.map(formatGithubAccountLine).join('\r\n')
+  downloadTextFile({
+    filename: buildExportFilename('github-accounts'),
+    content,
+  })
+  ElMessage.success(`已导出 ${exportRows.length} 条 GitHub 账号`)
 }
 
 async function handleDelete(row) {
@@ -297,13 +337,24 @@ onMounted(fetchGithubAccounts)
         <div class="table-header">
           <h3>GitHub 账号清单</h3>
           <div class="table-actions">
+            <el-button type="success" plain :icon="Download" @click="handleExportAccounts">
+              {{ exportButtonLabel }}
+            </el-button>
             <el-button :icon="Plus" @click="importDialogVisible = true">导入账号</el-button>
             <el-button text :icon="Refresh" @click="fetchGithubAccounts">刷新</el-button>
           </div>
         </div>
       </template>
 
-      <el-table :data="rows" v-loading="loading" stripe :row-class-name="resolveRowClass" @row-click="handleRowClick">
+      <el-table
+        :data="rows"
+        v-loading="loading"
+        stripe
+        :row-class-name="resolveRowClass"
+        @row-click="handleRowClick"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="48" align="center" />
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="username" label="用户名" min-width="160">
           <template #default="{ row }">

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Refresh, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
+import { Delete, Download, Plus, Refresh, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 
 import {
   batchGetGoogleLatestTaskRunStatusesByRootRunIds,
@@ -12,6 +12,12 @@ import {
   importGoogleAccounts,
   pageGoogleAccounts,
 } from '@/api/google'
+import {
+  buildExportFilename,
+  downloadTextFile,
+  fetchAllPagedRecords,
+  formatGoogleAccountLine,
+} from '@/utils/accountExport'
 
 const loading = ref(false)
 const rows = ref([])
@@ -23,6 +29,7 @@ const importMode = ref('text')
 const deletingId = ref(null)
 const importForm = reactive(createGoogleImportForm())
 const selectedRowIds = ref([])
+const selectedRows = ref([])
 const batchRefreshing = ref(false)
 const rowRefreshingMap = reactive({})
 const syncTaskTrackerMap = reactive({})
@@ -57,6 +64,11 @@ const dashboardStats = computed(() => {
     { label: '已开通家庭组', value: familyOpened },
   ]
 })
+const exportButtonLabel = computed(() => (
+  selectedRows.value.length
+    ? `导出已选（${selectedRows.value.length}）`
+    : '导出全部'
+))
 
 function toNullableText(value) {
   return value || '-'
@@ -267,6 +279,7 @@ async function fetchGoogleAccounts() {
     })
 
     rows.value = pageData?.records || []
+    selectedRows.value = []
     selectedRowIds.value = []
     pager.total = Number(pageData?.total || 0)
     pager.current = Number(pageData?.current || pager.current)
@@ -321,7 +334,29 @@ function resolveRowClass({ row }) {
 }
 
 function handleSelectionChange(selection) {
-  selectedRowIds.value = selection.map((item) => item.id).filter((id) => id !== null && id !== undefined)
+  selectedRows.value = selection || []
+  selectedRowIds.value = selectedRows.value.map((item) => item.id).filter((id) => id !== null && id !== undefined)
+}
+
+async function handleExportAccounts() {
+  const exportRows = selectedRows.value.length
+    ? [...selectedRows.value]
+    : await fetchAllPagedRecords(pageGoogleAccounts, {
+      email: filterForm.email || undefined,
+      syncStatus: filterForm.syncStatus,
+    })
+
+  if (!exportRows.length) {
+    ElMessage.warning('没有可导出的 Google 账号')
+    return
+  }
+
+  const content = exportRows.map(formatGoogleAccountLine).join('\r\n')
+  downloadTextFile({
+    filename: buildExportFilename('google-accounts'),
+    content,
+  })
+  ElMessage.success(`已导出 ${exportRows.length} 条 Google 账号`)
 }
 
 function isRowRefreshing(id) {
@@ -496,6 +531,14 @@ onBeforeUnmount(() => {
         <div class="table-header">
           <h3>账号清单</h3>
           <div class="table-actions">
+            <el-button
+              type="success"
+              plain
+              :icon="Download"
+              @click="handleExportAccounts"
+            >
+              {{ exportButtonLabel }}
+            </el-button>
             <el-button
               type="warning"
               plain

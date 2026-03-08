@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, EditPen, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { Delete, Download, EditPen, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import {
   batchDeleteChatgptAccounts,
   batchUpdateChatgptAccountStatus,
@@ -14,6 +14,12 @@ import {
   pageChatgptAccounts,
   updateChatgptAccount,
 } from '@/api/chatgpt'
+import {
+  buildExportFilename,
+  downloadTextFile,
+  fetchAllPagedRecords,
+  formatChatgptAccountLine,
+} from '@/utils/accountExport'
 
 const router = useRouter()
 const loading = ref(false)
@@ -68,6 +74,11 @@ const latestAutoRegisterTaskTitle = computed(() => {
   if (!status) return '最近一次自动注册任务'
   return isTerminalTaskStatus(status) ? `最近一次自动注册任务已结束（${formatTaskStatus(status)}）` : `最近一次自动注册任务进行中（${formatTaskStatus(status)}）`
 })
+const exportButtonLabel = computed(() => (
+  selectedRows.value.length
+    ? `导出已选（${selectedRows.value.length}）`
+    : '导出全部'
+))
 
 const accountRules = {
   email: [{ required: true, message: '请输入账号邮箱', trigger: 'blur' }, { type: 'email', message: '邮箱格式不正确', trigger: ['blur', 'change'] }],
@@ -165,6 +176,7 @@ async function fetchChatgptAccounts() {
   try {
     const pageData = await pageChatgptAccounts({ current: pager.current, size: pager.size, email: filterForm.email || undefined, subTier: filterForm.subTier, accountStatus: filterForm.accountStatus })
     rows.value = pageData?.records || []
+    selectedRows.value = []
     pager.total = Number(pageData?.total || 0)
     pager.current = Number(pageData?.current || pager.current)
     pager.size = Number(pageData?.size || pager.size)
@@ -267,6 +279,28 @@ async function handleBatchDelete() {
   try { const deletedCount = await batchDeleteChatgptAccounts(selectedIds.value); ElMessage.success(`批量删除成功，共 ${deletedCount ?? selectedIds.value.length} 条`); if (rows.value.length === selectedIds.value.length && pager.current > 1) pager.current -= 1; await fetchChatgptAccounts() } finally { batchDeleting.value = false }
 }
 
+async function handleExportAccounts() {
+  const exportRows = selectedRows.value.length
+    ? [...selectedRows.value]
+    : await fetchAllPagedRecords(pageChatgptAccounts, {
+      email: filterForm.email || undefined,
+      subTier: filterForm.subTier,
+      accountStatus: filterForm.accountStatus,
+    })
+
+  if (!exportRows.length) {
+    ElMessage.warning('没有可导出的 ChatGPT 账号')
+    return
+  }
+
+  const content = exportRows.map(formatChatgptAccountLine).join('\r\n')
+  downloadTextFile({
+    filename: buildExportFilename('chatgpt-accounts'),
+    content,
+  })
+  ElMessage.success(`已导出 ${exportRows.length} 条 ChatGPT 账号`)
+}
+
 onMounted(fetchChatgptAccounts)
 onBeforeUnmount(stopTaskStatusPolling)
 </script>
@@ -350,6 +384,9 @@ onBeforeUnmount(stopTaskStatusPolling)
         </div>
         <div class="panel-actions bulk-actions">
           <span class="selection-chip">已选 {{ selectedIds.length }} 条</span>
+          <el-button type="success" plain :icon="Download" @click="handleExportAccounts">
+            {{ exportButtonLabel }}
+          </el-button>
           <el-select v-model="statusBatchValue" placeholder="批量状态" class="status-select" :disabled="!hasSelection">
             <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>

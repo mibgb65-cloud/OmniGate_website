@@ -2,10 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Check, CopyDocument, Delete, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, CopyDocument, Delete, Download, Refresh } from '@element-plus/icons-vue'
 
 import { deleteGithubAccount, getGithubAccount } from '@/api/github'
 import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
+import { buildExportFilename, downloadTextFile, formatGithubAccountLine } from '@/utils/accountExport'
 
 const route = useRoute()
 const router = useRouter()
@@ -99,6 +100,19 @@ async function handleDelete() {
   }
 }
 
+function handleExportAccount() {
+  if (!detail.value) {
+    ElMessage.warning('暂无可导出的 GitHub 账号')
+    return
+  }
+
+  downloadTextFile({
+    filename: buildExportFilename(`github-account-${detail.value?.username || detail.value?.id}`),
+    content: formatGithubAccountLine(detail.value),
+  })
+  ElMessage.success('GitHub 账号已导出')
+}
+
 onMounted(fetchDetail)
 
 onBeforeUnmount(() => {
@@ -117,6 +131,7 @@ onBeforeUnmount(() => {
         <p>{{ detail?.username || '-' }} · {{ detail?.email || '-' }}</p>
       </div>
       <div class="hero-actions">
+        <el-button :icon="Download" @click="handleExportAccount">导出账号</el-button>
         <el-button type="danger" plain :icon="Delete" :loading="deleting" @click="handleDelete">删除账号</el-button>
         <el-button :icon="Refresh" @click="fetchDetail">刷新</el-button>
         <el-button type="primary" :icon="ArrowLeft" @click="router.push('/github/accounts')">返回列表</el-button>

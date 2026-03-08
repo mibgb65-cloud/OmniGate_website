@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, CopyDocument, Delete, Plus, Refresh, RefreshRight } from '@element-plus/icons-vue'
+import { Check, CopyDocument, Delete, Download, Plus, Refresh, RefreshRight } from '@element-plus/icons-vue'
 
 import {
   getGoogleLatestTaskRunStatusByRootRunId,
@@ -18,6 +18,7 @@ import {
 } from '@/api/google'
 import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
 import { useAuthStore } from '@/stores/auth'
+import { buildExportFilename, downloadTextFile, formatGoogleAccountLine } from '@/utils/accountExport'
 
 const route = useRoute()
 const router = useRouter()
@@ -658,6 +659,19 @@ async function handleDelete() {
   } finally {
     deleting.value = false
   }
+}
+
+function handleExportAccount() {
+  if (!detail.value) {
+    ElMessage.warning('暂无可导出的 Google 账号')
+    return
+  }
+
+  downloadTextFile({
+    filename: buildExportFilename(`google-account-${detail.value?.email || detail.value?.id}`),
+    content: formatGoogleAccountLine(detail.value),
+  })
+  ElMessage.success('Google 账号已导出')
 }
 
 function formatLogTime(date = new Date()) {
@@ -1550,6 +1564,7 @@ onBeforeUnmount(() => {
               </el-button>
             </div>
             <div class="hero-secondary-actions">
+              <el-button class="hero-secondary-button" size="small" :icon="Download" @click="handleExportAccount">导出账号</el-button>
               <el-button class="hero-secondary-button" size="small" :icon="Refresh" @click="fetchDetail()">刷新</el-button>
               <router-link class="hero-nav-link" to="/google/accounts">返回列表</router-link>
               <el-button
@@ -2189,7 +2204,7 @@ onBeforeUnmount(() => {
 
 .hero-secondary-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 

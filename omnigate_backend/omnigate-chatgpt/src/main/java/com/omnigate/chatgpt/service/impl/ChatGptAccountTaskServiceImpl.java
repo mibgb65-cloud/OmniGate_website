@@ -21,10 +21,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,6 +46,10 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
     private static final String DEFAULT_TRIGGERED_BY = "system";
     private static final String RETRY_MAX_ATTEMPTS_KEY = "task.retry_max_attempts";
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
+    private static final String CLOUDMAIL_ACCOUNT_EMAIL_KEY = "cloudmail.account_email";
+    private static final String CLOUDMAIL_PASSWORD_KEY = "cloudmail.password";
+    private static final String CLOUDMAIL_AUTH_URL_KEY = "cloudmail.auth_url";
+    private static final String CHATGPT_REGISTRATION_EMAIL_SUFFIX_KEY = "chatgpt.registration_email_suffix";
 
     private final ChatGptWorkerTaskRunMapper workerTaskRunMapper;
     private final ChatGptSystemSettingMapper systemSettingMapper;
@@ -54,6 +62,7 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
     @Override
     public ChatGptTaskDispatchVO dispatchBatchRegisterTask(ChatGptBatchRegisterTaskCreateDTO createDTO) {
         int signupCount = normalizeSignupCount(createDTO == null ? null : createDTO.getSignupCount());
+        validateBatchRegisterSettings();
         UUID taskRunId = UUID.randomUUID();
         UUID rootRunId = UUID.randomUUID();
         String payloadJson = buildTaskPayloadJson(signupCount);
@@ -124,6 +133,43 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
         return status;
     }
 
+    private void validateBatchRegisterSettings() {
+        List<String> invalidItems = new ArrayList<>();
+
+        String cloudMailAccountEmail = normalizeSettingValue(systemSettingMapper.selectValueByKey(CLOUDMAIL_ACCOUNT_EMAIL_KEY));
+        if (!StringUtils.hasText(cloudMailAccountEmail)) {
+            invalidItems.add("CloudMail 登录账号（邮箱）未配置");
+        }
+
+        String cloudMailPassword = normalizeSettingValue(systemSettingMapper.selectValueByKey(CLOUDMAIL_PASSWORD_KEY));
+        if (!StringUtils.hasText(cloudMailPassword)) {
+            invalidItems.add("CloudMail 登录密码未配置");
+        }
+
+        String cloudMailAuthUrl = normalizeSettingValue(systemSettingMapper.selectValueByKey(CLOUDMAIL_AUTH_URL_KEY));
+        if (!StringUtils.hasText(cloudMailAuthUrl)) {
+            invalidItems.add("CloudMail 登录网址未配置");
+        } else if (!isValidCloudMailAuthUrl(cloudMailAuthUrl)) {
+            invalidItems.add("CloudMail 登录网址格式不正确");
+        }
+
+        String registrationEmailSuffix = normalizeSettingValue(
+                systemSettingMapper.selectValueByKey(CHATGPT_REGISTRATION_EMAIL_SUFFIX_KEY)
+        );
+        if (!StringUtils.hasText(registrationEmailSuffix)) {
+            invalidItems.add("ChatGPT 注册邮箱后缀未配置");
+        } else if (!isValidRegistrationEmailSuffix(registrationEmailSuffix)) {
+            invalidItems.add("ChatGPT 注册邮箱后缀格式不正确");
+        }
+
+        if (!invalidItems.isEmpty()) {
+            throw new BizException(
+                    BizErrorCodeEnum.BAD_REQUEST,
+                    "自动注册前请先完成或修正以下设置：" + String.join("、", invalidItems)
+            );
+        }
+    }
+
     private int normalizeSignupCount(Integer signupCount) {
         if (signupCount == null || signupCount <= 0) {
             throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "signupCount 必须大于 0");
@@ -173,6 +219,30 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
             return fallbackName.trim();
         }
         return DEFAULT_TRIGGERED_BY;
+    }
+
+    private String normalizeSettingValue(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private boolean isValidCloudMailAuthUrl(String authUrl) {
+        try {
+            URI uri = new URI(authUrl);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            return scheme != null
+                    && host != null
+                    && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme));
+        } catch (URISyntaxException ex) {
+            return false;
+        }
+    }
+
+    private boolean isValidRegistrationEmailSuffix(String emailSuffix) {
+        String normalized = emailSuffix.startsWith("@") ? emailSuffix.substring(1) : emailSuffix;
+        return !normalized.contains("@")
+                && !normalized.chars().anyMatch(Character::isWhitespace)
+                && normalized.contains(".");
     }
 
     private String tryExtractPrincipalUsername(Object principal) {
