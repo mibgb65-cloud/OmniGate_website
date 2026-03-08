@@ -5,9 +5,12 @@ import com.omnigate.common.response.Result;
 import com.omnigate.github.model.dto.GithubAccountImportDTO;
 import com.omnigate.github.model.dto.GithubAccountPageQueryDTO;
 import com.omnigate.github.model.dto.GithubAccountStatusDTO;
+import com.omnigate.github.model.dto.GithubStarRepoTaskDTO;
 import com.omnigate.github.model.dto.GithubAccountUpdateDTO;
 import com.omnigate.github.model.vo.GithubAccountVO;
+import com.omnigate.github.model.vo.GithubTaskDispatchVO;
 import com.omnigate.github.service.GithubAccountService;
+import com.omnigate.github.service.GithubAccountTaskService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
@@ -35,6 +38,7 @@ import java.util.List;
 public class GithubAccountController {
 
     private final GithubAccountService githubAccountService;
+    private final GithubAccountTaskService githubAccountTaskService;
 
     /**
      * 导入账号（单条/批量）。
@@ -108,5 +112,29 @@ public class GithubAccountController {
     public Result<Void> deleteAccount(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
         githubAccountService.deleteAccount(id);
         return Result.success();
+    }
+
+    /**
+     * 投递 GitHub Token 生成任务。
+     *
+     * @param id 账号 ID
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/token/generate")
+    public Result<GithubTaskDispatchVO> generateAccessToken(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
+        return Result.success(githubAccountTaskService.dispatchGenerateTokenTask(id));
+    }
+
+    /**
+     * 投递 GitHub 仓库 Star 任务。
+     *
+     * @param id 账号 ID
+     * @param requestDTO Star 请求参数
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/repos/star")
+    public Result<GithubTaskDispatchVO> starRepository(@PathVariable @Positive(message = "账号ID必须大于0") Long id,
+                                                       @RequestBody @Valid GithubStarRepoTaskDTO requestDTO) {
+        return Result.success(githubAccountTaskService.dispatchStarRepoTask(id, requestDTO.getRepoUrl()));
     }
 }

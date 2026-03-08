@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from src.modules.base_task import BaseTask
 from src.modules.chatgpt.tasks.batch_register_chatgpt_accounts import BatchRegisterChatGptAccountsTask
+from src.modules.github.tasks.generate_github_token_by_account_id import GenerateGithubTokenByAccountIdTask
+from src.modules.github.tasks.star_github_repo_by_account_id import StarGithubRepoByAccountIdTask
 from src.modules.google.tasks.get_google_account_feature_by_account_id import (
     GetGoogleAccountFeatureByAccountIdTask,
 )
@@ -51,6 +53,14 @@ _TASK_REGISTRY: dict[TaskRoute, type[BaseTask]] = {
         module="google",
         action="invite_google_family_member_by_account_id",
     ): InviteGoogleFamilyMemberByAccountIdTask,
+    TaskRoute(
+        module="github",
+        action="generate_github_token_by_account_id",
+    ): GenerateGithubTokenByAccountIdTask,
+    TaskRoute(
+        module="github",
+        action="star_github_repo_by_account_id",
+    ): StarGithubRepoByAccountIdTask,
 }
 
 

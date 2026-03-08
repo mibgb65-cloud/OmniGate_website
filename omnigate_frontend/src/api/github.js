@@ -45,3 +45,34 @@ export function deleteGithubAccount(id) {
     method: 'delete',
   })
 }
+
+export function dispatchGithubGenerateTokenTask(id) {
+  return request({
+    url: `/api/github/accounts/${id}/token/generate`,
+    method: 'post',
+  })
+}
+
+export function dispatchGithubStarRepoTask(id, repoUrl) {
+  return request({
+    url: `/api/github/accounts/${id}/repos/star`,
+    method: 'post',
+    data: { repoUrl },
+  })
+}
+
+export function getGithubTaskRunStatus(taskRunId, config = {}) {
+  return request({
+    url: `/api/github/tasks/${taskRunId}`,
+    method: 'get',
+    ...config,
+  })
+}
+
+export function getGithubLatestTaskRunStatusByRootRunId(rootRunId, config = {}) {
+  return request({
+    url: `/api/github/tasks/root/${rootRunId}`,
+    method: 'get',
+    ...config,
+  })
+}

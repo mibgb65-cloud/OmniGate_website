@@ -184,7 +184,15 @@ function handleReset() {
 function handleRowClick(row, column) {
   if (column?.type === 'selection' || column?.label === '操作') return
   if (!row?.id) return
-  router.push(`/github/accounts/${row.id}`)
+  try {
+    sessionStorage.setItem(`og-github-account-snapshot-${row.id}`, JSON.stringify(row))
+  } catch {
+    // ignore snapshot persistence failure
+  }
+  router.push({
+    path: `/github/accounts/${row.id}`,
+    query: row?.email ? { email: row.email } : undefined,
+  })
 }
 
 function resolveRowClass() {

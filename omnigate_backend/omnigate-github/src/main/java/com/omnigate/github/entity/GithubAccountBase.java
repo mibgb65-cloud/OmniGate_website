@@ -46,6 +46,17 @@ public class GithubAccountBase extends BaseEntity {
     private String totpSecret;
 
     /**
+     * GitHub Personal Access Token（加密存储）。
+     */
+    @TableField(typeHandler = AesEncryptTypeHandler.class)
+    private String accessToken;
+
+    /**
+     * Token 备注名称。
+     */
+    private String accessTokenNote;
+
+    /**
      * 固定代理 IP。
      */
     private String proxyIp;

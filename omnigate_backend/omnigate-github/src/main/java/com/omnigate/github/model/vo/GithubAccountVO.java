@@ -37,6 +37,16 @@ public class GithubAccountVO {
     private String totpSecret;
 
     /**
+     * GitHub Personal Access Token。
+     */
+    private String accessToken;
+
+    /**
+     * Token 备注名称。
+     */
+    private String accessTokenNote;
+
+    /**
      * 代理 IP。
      */
     private String proxyIp;

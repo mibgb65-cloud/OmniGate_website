@@ -1,23 +1,43 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Check, CopyDocument, Delete, Download, Refresh } from '@element-plus/icons-vue'
 
-import { deleteGithubAccount, getGithubAccount } from '@/api/github'
+import {
+  deleteGithubAccount,
+  dispatchGithubGenerateTokenTask,
+  dispatchGithubStarRepoTask,
+  getGithubAccount,
+  getGithubLatestTaskRunStatusByRootRunId,
+  getGithubTaskRunStatus,
+} from '@/api/github'
 import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
 import { buildExportFilename, downloadTextFile, formatGithubAccountLine } from '@/utils/accountExport'
 
 const route = useRoute()
 const router = useRouter()
+const TASK_STATUS_POLL_INTERVAL_MS = 2400
+const TASK_STATUS_RETRY_INTERVAL_MS = 4200
 
 const loading = ref(false)
 const detail = ref(null)
 const deleting = ref(false)
 const copiedField = ref('')
+const actionLoading = reactive({
+  generateToken: false,
+  starRepo: false,
+})
+const activeTask = reactive(createTaskState())
 let copyFeedbackTimer = null
+let taskStatusPollTimer = null
 
 const accountId = computed(() => String(route.params.id || '').trim())
+const hasActiveTask = computed(() => Boolean(activeTask.taskRunId || activeTask.rootRunId))
+const isTaskPending = computed(() => {
+  const status = normalizeTaskStatus(activeTask.status)
+  return status === 'queued' || status === 'running'
+})
 
 function resolveStatusText(status) {
   if (status === 'active') return '正常'
@@ -26,8 +46,145 @@ function resolveStatusText(status) {
   return '-'
 }
 
+function normalizeTaskStatus(status) {
+  return String(status || '').trim().toLowerCase()
+}
+
+function resolveTaskStatusText(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'queued') return '排队中'
+  if (normalized === 'running') return '执行中'
+  if (normalized === 'success') return '已成功'
+  if (normalized === 'failed') return '已失败'
+  if (normalized === 'cancelled') return '已取消'
+  if (normalized === 'timeout') return '已超时'
+  return '未开始'
+}
+
+function resolveTaskTagType(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'success') return 'success'
+  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'timeout') return 'danger'
+  if (normalized === 'running') return 'warning'
+  return 'info'
+}
+
+function resolveTaskAlertType(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'success') return 'success'
+  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'timeout') return 'error'
+  if (normalized === 'running') return 'warning'
+  return 'info'
+}
+
+function resolveTaskActionText(action) {
+  const normalized = String(action || '').trim()
+  if (normalized === 'generate_github_token_by_account_id') return '生成 Token'
+  if (normalized === 'star_github_repo_by_account_id') return 'Star 仓库'
+  return normalized || '-'
+}
+
+function isTerminalTaskStatus(status) {
+  const normalized = normalizeTaskStatus(status)
+  return ['success', 'failed', 'cancelled', 'timeout'].includes(normalized)
+}
+
 function toNullableText(value) {
   return value || '-'
+}
+
+function createTaskState() {
+  return {
+    taskRunId: '',
+    rootRunId: '',
+    action: '',
+    status: '',
+    errorMessage: '',
+    lastCheckpoint: '',
+    attemptNo: '',
+    maxAttempts: '',
+    repoUrl: '',
+    terminalNotified: false,
+  }
+}
+
+function syncTaskState(taskData = {}) {
+  activeTask.taskRunId = String(taskData?.taskRunId || activeTask.taskRunId || '').trim()
+  activeTask.rootRunId = String(taskData?.rootRunId || activeTask.rootRunId || '').trim()
+  activeTask.action = String(taskData?.action || activeTask.action || '').trim()
+  activeTask.status = String(taskData?.status || activeTask.status || '').trim()
+  activeTask.errorMessage = String(taskData?.errorMessage || activeTask.errorMessage || '').trim()
+  activeTask.lastCheckpoint = String(taskData?.lastCheckpoint || activeTask.lastCheckpoint || '').trim()
+  activeTask.attemptNo = taskData?.attemptNo ?? activeTask.attemptNo ?? ''
+  activeTask.maxAttempts = taskData?.maxAttempts ?? activeTask.maxAttempts ?? ''
+  activeTask.repoUrl = String(taskData?.repoUrl || activeTask.repoUrl || '').trim()
+}
+
+function stopTaskStatusPolling() {
+  if (taskStatusPollTimer) {
+    clearTimeout(taskStatusPollTimer)
+    taskStatusPollTimer = null
+  }
+}
+
+function scheduleTaskStatusPoll(delay = TASK_STATUS_POLL_INTERVAL_MS) {
+  stopTaskStatusPolling()
+  if (!activeTask.rootRunId && !activeTask.taskRunId) {
+    return
+  }
+  taskStatusPollTimer = setTimeout(() => {
+    void pollTaskStatus()
+  }, delay)
+}
+
+async function handleTerminalTaskStatus() {
+  if (activeTask.terminalNotified) {
+    return
+  }
+  activeTask.terminalNotified = true
+
+  const status = normalizeTaskStatus(activeTask.status)
+  const taskLabel = resolveTaskActionText(activeTask.action)
+  if (status === 'success') {
+    ElMessage.success(`${taskLabel}已完成`)
+    if (activeTask.action === 'generate_github_token_by_account_id') {
+      await fetchDetail()
+    }
+    return
+  }
+
+  ElMessage.error(activeTask.errorMessage || `${taskLabel}执行失败`)
+}
+
+async function pollTaskStatus() {
+  const rootRunId = String(activeTask.rootRunId || '').trim()
+  const taskRunId = String(activeTask.taskRunId || '').trim()
+  if (!rootRunId && !taskRunId) {
+    return
+  }
+
+  try {
+    const statusSnapshot = rootRunId
+      ? await getGithubLatestTaskRunStatusByRootRunId(rootRunId, { skipErrorMessage: true })
+      : await getGithubTaskRunStatus(taskRunId, { skipErrorMessage: true })
+
+    if (!statusSnapshot) {
+      scheduleTaskStatusPoll(TASK_STATUS_RETRY_INTERVAL_MS)
+      return
+    }
+
+    syncTaskState(statusSnapshot)
+
+    if (isTerminalTaskStatus(activeTask.status)) {
+      stopTaskStatusPolling()
+      await handleTerminalTaskStatus()
+      return
+    }
+
+    scheduleTaskStatusPoll()
+  } catch {
+    scheduleTaskStatusPoll(TASK_STATUS_RETRY_INTERVAL_MS)
+  }
 }
 
 function markCopied(fieldKey) {
@@ -57,6 +214,30 @@ async function handleCopyValue(value, label, fieldKey) {
   }
 }
 
+function syncBreadcrumbState(detailData) {
+  if (!accountId.value || !detailData) {
+    return
+  }
+
+  try {
+    sessionStorage.setItem(`og-github-account-snapshot-${accountId.value}`, JSON.stringify(detailData))
+  } catch {
+    // ignore snapshot persistence failure
+  }
+
+  const email = String(detailData?.email || '').trim()
+  if (!email || String(route.query.email || '').trim() === email) {
+    return
+  }
+
+  router.replace({
+    query: {
+      ...route.query,
+      email,
+    },
+  }).catch(() => {})
+}
+
 async function fetchDetail() {
   if (!accountId.value) {
     ElMessage.error('账号 ID 无效')
@@ -68,6 +249,7 @@ async function fetchDetail() {
   try {
     const detailData = await getGithubAccount(accountId.value)
     detail.value = detailData || {}
+    syncBreadcrumbState(detail.value)
   } catch {
     ElMessage.error('获取 GitHub 账号详情失败')
     router.replace('/github/accounts')
@@ -100,6 +282,56 @@ async function handleDelete() {
   }
 }
 
+function activateTask(dispatchResult, extra = {}) {
+  Object.assign(activeTask, createTaskState())
+  activeTask.terminalNotified = false
+  syncTaskState({
+    ...dispatchResult,
+    ...extra,
+  })
+  scheduleTaskStatusPoll(1200)
+}
+
+async function handleGenerateToken() {
+  if (!detail.value?.id || isTaskPending.value) return
+
+  actionLoading.generateToken = true
+  try {
+    const dispatchResult = await dispatchGithubGenerateTokenTask(detail.value.id)
+    activateTask(dispatchResult)
+    ElMessage.success(`生成 Token 任务已入队，taskRunId=${dispatchResult?.taskRunId || '-'}`)
+  } finally {
+    actionLoading.generateToken = false
+  }
+}
+
+async function handleStarRepo() {
+  if (!detail.value?.id || isTaskPending.value) return
+
+  let repoUrl = ''
+  try {
+    const { value } = await ElMessageBox.prompt('请输入需要执行 Star 的 GitHub 仓库地址', 'Star 仓库', {
+      inputPlaceholder: 'https://github.com/owner/repo',
+      inputValue: activeTask.repoUrl || '',
+      confirmButtonText: '提交任务',
+      cancelButtonText: '取消',
+      inputValidator: (value) => String(value || '').trim() ? true : '仓库地址不能为空',
+    })
+    repoUrl = String(value || '').trim()
+  } catch {
+    return
+  }
+
+  actionLoading.starRepo = true
+  try {
+    const dispatchResult = await dispatchGithubStarRepoTask(detail.value.id, repoUrl)
+    activateTask(dispatchResult, { repoUrl: dispatchResult?.repoUrl || repoUrl })
+    ElMessage.success(`Star 仓库任务已入队，taskRunId=${dispatchResult?.taskRunId || '-'}`)
+  } finally {
+    actionLoading.starRepo = false
+  }
+}
+
 function handleExportAccount() {
   if (!detail.value) {
     ElMessage.warning('暂无可导出的 GitHub 账号')
@@ -120,6 +352,7 @@ onBeforeUnmount(() => {
     clearTimeout(copyFeedbackTimer)
     copyFeedbackTimer = null
   }
+  stopTaskStatusPolling()
 })
 </script>
 
@@ -206,12 +439,82 @@ onBeforeUnmount(() => {
                 {{ copiedField === 'totp-secret' ? '已复制' : '复制' }}
               </el-button>
             </div>
+            <div class="credential-item credential-item--token">
+              <span class="credential-key">Token</span>
+              <span class="credential-value">{{ toNullableText(detail?.accessToken) }}</span>
+              <el-button
+                text
+                class="credential-copy-btn"
+                :class="{ 'is-copied': copiedField === 'access-token' }"
+                :icon="copiedField === 'access-token' ? Check : CopyDocument"
+                :disabled="!detail?.accessToken"
+                @click="handleCopyValue(detail?.accessToken, 'Access Token', 'access-token')"
+              >
+                {{ copiedField === 'access-token' ? '已复制' : '复制' }}
+              </el-button>
+            </div>
           </div>
         </el-descriptions-item>
         <el-descriptions-item label="账号状态">{{ resolveStatusText(detail?.accountStatus) }}</el-descriptions-item>
         <el-descriptions-item label="代理 IP">{{ toNullableText(detail?.proxyIp) }}</el-descriptions-item>
+        <el-descriptions-item label="Token Note">{{ toNullableText(detail?.accessTokenNote) }}</el-descriptions-item>
         <el-descriptions-item label="更新时间">{{ toNullableText(detail?.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
+    </section>
+
+    <section class="card-block">
+      <header class="section-header">
+        <div>
+          <h3>自动化操作</h3>
+          <p>通过后端任务队列触发 GitHub 登录、生成 Token 和仓库 Star 操作。</p>
+        </div>
+        <div class="automation-actions">
+          <el-button type="primary" :loading="actionLoading.generateToken" :disabled="isTaskPending || !detail?.id" @click="handleGenerateToken">
+            生成操作 Token
+          </el-button>
+          <el-button type="success" plain :loading="actionLoading.starRepo" :disabled="isTaskPending || !detail?.id" @click="handleStarRepo">
+            Star 仓库
+          </el-button>
+        </div>
+      </header>
+
+      <div v-if="hasActiveTask" class="task-status-card">
+        <el-alert :type="resolveTaskAlertType(activeTask.status)" :closable="false" show-icon>
+          <template #title>
+            最近任务：{{ resolveTaskActionText(activeTask.action) }} · {{ resolveTaskStatusText(activeTask.status) }}
+          </template>
+          <div class="task-meta-grid">
+            <div class="task-meta-item">
+              <span>状态</span>
+              <el-tag :type="resolveTaskTagType(activeTask.status)" effect="light">
+                {{ resolveTaskStatusText(activeTask.status) }}
+              </el-tag>
+            </div>
+            <div class="task-meta-item">
+              <span>TaskRunId</span>
+              <strong>{{ activeTask.taskRunId || '-' }}</strong>
+            </div>
+            <div class="task-meta-item">
+              <span>RootRunId</span>
+              <strong>{{ activeTask.rootRunId || '-' }}</strong>
+            </div>
+            <div class="task-meta-item">
+              <span>重试</span>
+              <strong>{{ activeTask.attemptNo || '-' }} / {{ activeTask.maxAttempts || '-' }}</strong>
+            </div>
+            <div class="task-meta-item" v-if="activeTask.repoUrl">
+              <span>仓库</span>
+              <strong>{{ activeTask.repoUrl }}</strong>
+            </div>
+            <div class="task-meta-item" v-if="activeTask.lastCheckpoint">
+              <span>检查点</span>
+              <strong>{{ activeTask.lastCheckpoint }}</strong>
+            </div>
+          </div>
+          <p v-if="activeTask.errorMessage" class="task-error-text">{{ activeTask.errorMessage }}</p>
+        </el-alert>
+      </div>
+      <el-empty v-else description="暂未发起 GitHub 自动化任务" />
     </section>
 
     <section class="card-block">
@@ -299,6 +602,61 @@ onBeforeUnmount(() => {
   font-size: 1rem;
 }
 
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-header p {
+  margin: 6px 0 0;
+  color: var(--og-slate-600);
+  font-size: 0.9rem;
+}
+
+.automation-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-status-card {
+  margin-top: 10px;
+}
+
+.task-meta-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-meta-item {
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.task-meta-item span {
+  font-size: 0.78rem;
+  color: var(--og-slate-600);
+}
+
+.task-meta-item strong {
+  color: var(--og-slate-900);
+  word-break: break-all;
+}
+
+.task-error-text {
+  margin: 12px 0 0;
+  color: #991b1b;
+  word-break: break-word;
+}
+
 :deep(.detail-descriptions .el-descriptions__table) {
   border-collapse: separate;
   border-spacing: 0 8px;
@@ -362,6 +720,11 @@ onBeforeUnmount(() => {
   border-color: rgba(16, 185, 129, 0.24);
 }
 
+.credential-item--token {
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
 .credential-key {
   font-weight: 800;
   white-space: nowrap;
@@ -377,6 +740,10 @@ onBeforeUnmount(() => {
 
 .credential-item--totp .credential-key {
   color: #047857;
+}
+
+.credential-item--token .credential-key {
+  color: #0f172a;
 }
 
 .credential-value {
@@ -431,6 +798,14 @@ onBeforeUnmount(() => {
   .detail-hero {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .section-header {
+    flex-direction: column;
+  }
+
+  .task-meta-grid {
+    grid-template-columns: 1fr;
   }
 }
 

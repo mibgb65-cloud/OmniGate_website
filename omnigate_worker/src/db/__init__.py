@@ -2,6 +2,9 @@
 
 from src.db.chatgpt_account_persistence import ChatGptAccountPersistence
 from src.db.database import Database
+from src.db.github_account_persistence import GithubAccountPersistence
+from src.db.github_account_repository import GithubAccountCredentialRecord
+from src.db.github_account_repository import GithubAccountRepository
 from src.db.google_account_persistence import GoogleAccountPersistence
 from src.db.google_account_repository import GoogleAccountCredentialRecord, GoogleAccountRepository
 from src.db.settings_repository import CloudMailAuthSettingRecord, SystemSettingsRepository
@@ -12,6 +15,9 @@ __all__ = [
     "ChatGptAccountPersistence",
     "CloudMailAuthSettingRecord",
     "Database",
+    "GithubAccountCredentialRecord",
+    "GithubAccountPersistence",
+    "GithubAccountRepository",
     "GoogleAccountCredentialRecord",
     "GoogleAccountPersistence",
     "GoogleAccountRepository",
