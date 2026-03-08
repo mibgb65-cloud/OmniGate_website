@@ -16,8 +16,8 @@ import asyncpg
 
 from src.browser.browser_actions import BrowserActions
 from src.db import GoogleAccountPersistence, GoogleAccountRepository
-from src.modules.google.action.google_auth_actions import GoogleAuthActions
-from src.modules.google.action.google_student_eligibility_actions import GoogleStudentEligibilityActions
+from src.modules.google.actions.google_auth_actions import GoogleAuthActions
+from src.modules.google.actions.google_student_eligibility_actions import GoogleStudentEligibilityActions
 from src.modules.google.models.google_action_params import GoogleAuthParams
 from src.modules.google.models.google_service_params import GetGoogleAccountStudentEligibilityByAccountIdParams
 from src.utils import AesTypeHandlerCompat

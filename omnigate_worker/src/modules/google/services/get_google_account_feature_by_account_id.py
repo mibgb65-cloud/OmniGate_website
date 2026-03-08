@@ -16,9 +16,9 @@ import asyncpg
 
 from src.browser.browser_actions import BrowserActions
 from src.db import GoogleAccountPersistence, GoogleAccountRepository
-from src.modules.google.action.google_auth_actions import GoogleAuthActions
-from src.modules.google.action.google_family_status_actions import GoogleFamilyActions
-from src.modules.google.action.google_subscription_actions import GoogleSubscriptionActions
+from src.modules.google.actions.google_auth_actions import GoogleAuthActions
+from src.modules.google.actions.google_family_status_actions import GoogleFamilyActions
+from src.modules.google.actions.google_subscription_actions import GoogleSubscriptionActions
 from src.modules.google.models.google_action_params import GoogleAuthParams
 from src.modules.google.models.google_service_params import GetGoogleAccountFeatureByAccountIdParams
 from src.utils import AesTypeHandlerCompat

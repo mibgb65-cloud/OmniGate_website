@@ -7,8 +7,8 @@ import logging
 import asyncpg
 
 from src.db import SystemSettingsRepository
-from src.modules.cloudmail.action.cloudmail_auth_actions import CloudMailAuthActions
-from src.modules.cloudmail.action.cloudmail_read_email_actions import CloudMailReadEmailActions
+from src.modules.cloudmail.actions.cloudmail_auth_actions import CloudMailAuthActions
+from src.modules.cloudmail.actions.cloudmail_read_email_actions import CloudMailReadEmailActions
 from src.modules.cloudmail.models.cloudmail_action_params import CloudMailAuthParams, CloudMailReadEmailParams
 from src.modules.cloudmail.models.cloudmail_service_params import GetChatGptVerificationCodeParams
 from src.modules.cloudmail.utils import CloudMailVerificationCodeExtractor

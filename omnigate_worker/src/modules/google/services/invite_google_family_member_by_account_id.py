@@ -16,9 +16,9 @@ import asyncpg
 
 from src.browser.browser_actions import BrowserActions
 from src.db import GoogleAccountPersistence, GoogleAccountRepository
-from src.modules.google.action.google_auth_actions import GoogleAuthActions
-from src.modules.google.action.google_family_invite_actions import GoogleFamilyInviteActions
-from src.modules.google.action.google_family_status_actions import GoogleFamilyActions
+from src.modules.google.actions.google_auth_actions import GoogleAuthActions
+from src.modules.google.actions.google_family_invite_actions import GoogleFamilyInviteActions
+from src.modules.google.actions.google_family_status_actions import GoogleFamilyActions
 from src.modules.google.models.google_action_params import GoogleAuthParams, GoogleFamilyInviteParams
 from src.modules.google.models.google_service_params import InviteGoogleFamilyMemberByAccountIdParams
 from src.utils import AesTypeHandlerCompat
