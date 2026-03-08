@@ -28,7 +28,7 @@ class RetryableChatGptSignupError(RuntimeError):
 
 
 class BatchRegisterChatGptAccountsService:
-    """使用单个浏览器实例，按顺序批量注册并持久化 ChatGPT 账号。"""
+    """按顺序批量注册并持久化 ChatGPT 账号，每个账号使用独立浏览器实例。"""
 
     _LOG_PREFIX = "[ChatGPT批量注册]"
     _PERSISTABLE_STATUSES = {"REGISTERED_SUCCESS"}
@@ -75,76 +75,70 @@ class BatchRegisterChatGptAccountsService:
         success_count = 0
 
         logger.info("%s 批次开始 | 请求数量=%s", self._LOG_PREFIX, request.signup_count)
-        browser = await self._browser_actions.start_browser()
-        try:
-            for index in range(1, request.signup_count + 1):
+        for index in range(1, request.signup_count + 1):
+            logger.info(
+                "%s 开始处理账号 | 进度=%s/%s",
+                self._LOG_PREFIX,
+                index,
+                request.signup_count,
+            )
+            signup_result: dict[str, Any] | None = None
+            try:
+                signup_result = await self._run_single_account(
+                    index=index,
+                    total=request.signup_count,
+                )
+                persisted = False
+                account_id: int | None = None
+                status = str(signup_result.get("status") or "UNKNOWN")
+                if status in self._RETRYABLE_STATUSES and success_count == 0:
+                    message = str(signup_result.get("msg") or "打开 ChatGPT 首页连续超时")
+                    raise RetryableChatGptSignupError(message)
+                if self._should_persist(status):
+                    account_id = await self._account_persistence.create_account(
+                        email=str(signup_result.get("email") or ""),
+                        password=str(signup_result.get("password") or ""),
+                        totp_secret=str(signup_result.get("totp_secret") or "") or None,
+                    )
+                    persisted = True
+                    success_count += 1
+
                 logger.info(
-                    "%s 开始处理账号 | 进度=%s/%s",
+                    "%s 单个账号处理完成 | 进度=%s/%s | 状态=%s | 持久化=%s | 邮箱=%s",
+                    self._LOG_PREFIX,
+                    index,
+                    request.signup_count,
+                    status,
+                    persisted,
+                    self._mask_email(str(signup_result.get("email") or "")),
+                )
+                results.append(
+                    self._build_item_result(
+                        index=index,
+                        signup_result=signup_result,
+                        persisted=persisted,
+                        account_id=account_id,
+                    )
+                )
+            except RetryableChatGptSignupError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "%s 单个账号处理失败 | 进度=%s/%s",
                     self._LOG_PREFIX,
                     index,
                     request.signup_count,
                 )
-                signup_result: dict[str, Any] | None = None
-                try:
-                    browser, signup_result = await self._process_account_with_retry(
-                        browser=browser,
+                results.append(
+                    self._build_item_result(
                         index=index,
-                        total=request.signup_count,
+                        signup_result=signup_result,
+                        persisted=False,
+                        account_id=None,
+                        override_status="FAILED",
+                        override_msg=str(exc),
                     )
-                    persisted = False
-                    account_id: int | None = None
-                    status = str(signup_result.get("status") or "UNKNOWN")
-                    if status in self._RETRYABLE_STATUSES and success_count == 0:
-                        message = str(signup_result.get("msg") or "打开 ChatGPT 首页连续超时")
-                        raise RetryableChatGptSignupError(message)
-                    if self._should_persist(status):
-                        account_id = await self._account_persistence.create_account(
-                            email=str(signup_result.get("email") or ""),
-                            password=str(signup_result.get("password") or ""),
-                            totp_secret=str(signup_result.get("totp_secret") or "") or None,
-                        )
-                        persisted = True
-                        success_count += 1
-
-                    logger.info(
-                        "%s 单个账号处理完成 | 进度=%s/%s | 状态=%s | 持久化=%s | 邮箱=%s",
-                        self._LOG_PREFIX,
-                        index,
-                        request.signup_count,
-                        status,
-                        persisted,
-                        self._mask_email(str(signup_result.get("email") or "")),
-                    )
-                    results.append(
-                        self._build_item_result(
-                            index=index,
-                            signup_result=signup_result,
-                            persisted=persisted,
-                            account_id=account_id,
-                        )
-                    )
-                except RetryableChatGptSignupError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception(
-                        "%s 单个账号处理失败 | 进度=%s/%s",
-                        self._LOG_PREFIX,
-                        index,
-                        request.signup_count,
-                    )
-                    results.append(
-                        self._build_item_result(
-                            index=index,
-                            signup_result=signup_result,
-                            persisted=False,
-                            account_id=None,
-                            override_status="FAILED",
-                            override_msg=str(exc),
-                        )
-                    )
-        finally:
-            await self._browser_actions.close_browser()
-            logger.info("%s 浏览器已关闭", self._LOG_PREFIX)
+                )
 
         result = ChatGptBatchRegisterResult(
             requested_count=request.signup_count,
@@ -160,6 +154,35 @@ class BatchRegisterChatGptAccountsService:
             result.failed_count,
         )
         return result
+
+    async def _run_single_account(
+        self,
+        *,
+        index: int,
+        total: int,
+    ) -> dict[str, Any]:
+        browser = await self._browser_actions.start_browser()
+        logger.info(
+            "%s 当前账号浏览器已启动 | 进度=%s/%s",
+            self._LOG_PREFIX,
+            index,
+            total,
+        )
+        try:
+            _, signup_result = await self._process_account_with_retry(
+                browser=browser,
+                index=index,
+                total=total,
+            )
+            return signup_result
+        finally:
+            await self._browser_actions.close_browser()
+            logger.info(
+                "%s 当前账号浏览器已关闭 | 进度=%s/%s",
+                self._LOG_PREFIX,
+                index,
+                total,
+            )
 
     async def _process_account_with_retry(
         self,

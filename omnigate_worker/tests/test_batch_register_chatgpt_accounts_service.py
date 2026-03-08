@@ -64,6 +64,25 @@ class _AlwaysTimeoutSignupAction:
         }
 
 
+class _AlwaysSuccessSignupAction:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.browser_ids: list[int] = []
+
+    async def process_account_with_browser(self, browser: dict[str, int]) -> dict[str, Any]:
+        self.calls += 1
+        self.browser_ids.append(browser["id"])
+        index = self.calls
+        return {
+            "status": "REGISTERED_SUCCESS",
+            "email": f"success-{index}@example.com",
+            "password": f"pwd-{index}",
+            "name": f"Success-{index}",
+            "totp_secret": f"totp-{index}",
+            "msg": "ok",
+        }
+
+
 class _FakePersistence:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str | None]] = []
@@ -111,3 +130,29 @@ class TestBatchRegisterChatGptAccountsService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(2, browser_actions.start_calls)
         self.assertEqual(2, browser_actions.close_calls)
+
+    async def test_should_use_fresh_browser_for_each_account_in_batch(self) -> None:
+        browser_actions = _FakeBrowserActions()
+        signup_action = _AlwaysSuccessSignupAction()
+        persistence = _FakePersistence()
+        service = BatchRegisterChatGptAccountsService(
+            browser_actions=browser_actions,
+            signup_action=signup_action,
+            account_persistence=persistence,
+            chatgpt_home_open_max_retries=1,
+        )
+
+        result = await service.execute(BatchRegisterChatGptAccountsParams(signup_count=2))
+
+        self.assertEqual(2, browser_actions.start_calls)
+        self.assertEqual(2, browser_actions.close_calls)
+        self.assertEqual([1, 2], signup_action.browser_ids)
+        self.assertEqual(2, result.success_count)
+        self.assertEqual(0, result.failed_count)
+        self.assertEqual(
+            [
+                ("success-1@example.com", "pwd-1", "totp-1"),
+                ("success-2@example.com", "pwd-2", "totp-2"),
+            ],
+            persistence.calls,
+        )
