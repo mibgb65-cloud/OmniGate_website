@@ -501,9 +501,12 @@ class OpenAISignupService:
         if self._db_pool is None:
             raise ValueError("缺少 db_pool，无法生成随机注册邮箱")
 
-        resolved_email = await generate_random_email(db_pool=self._db_pool)
-        resolved_password = generate_random_password()
         resolved_name = generate_random_name()
+        resolved_email = await generate_random_email(
+            db_pool=self._db_pool,
+            preferred_name=resolved_name,
+        )
+        resolved_password = generate_random_password()
         return resolved_email, resolved_password, resolved_name
 
     async def _wait_for_verification_code(
