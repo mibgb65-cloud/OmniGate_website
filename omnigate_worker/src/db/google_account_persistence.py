@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import logging
 import re
 from typing import Any
 
 import asyncpg
+
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleAccountPersistence:
@@ -217,13 +221,14 @@ class GoogleAccountPersistence:
 
         await conn.execute("DELETE FROM acc_google_family_member WHERE account_id = $1", account_id)
 
-        rows: list[tuple[int, str, str, date | None, int]] = []
+        rows_by_email: dict[str, tuple[int, str, str, date | None, int]] = {}
         for item in members:
             if not isinstance(item, dict):
                 continue
             email = self._norm_text(item.get("member_email"))
             if not email:
                 continue
+            email = email.lower()
             member_name = self._norm_text(item.get("member_name"))
             if not member_name:
                 continue
@@ -231,7 +236,16 @@ class GoogleAccountPersistence:
             member_role = self._map_member_role(item.get("member_role"))
             if member_role is None:
                 continue
-            rows.append((account_id, member_name, email, invite_date, member_role))
+            if email in rows_by_email:
+                logger.warning(
+                    "Google 家庭成员快照检测到重复邮箱，已跳过重复项 | account_id=%s | member_email=%s",
+                    account_id,
+                    email,
+                )
+                continue
+            rows_by_email[email] = (account_id, member_name, email, invite_date, member_role)
+
+        rows = list(rows_by_email.values())
 
         if not rows:
             return

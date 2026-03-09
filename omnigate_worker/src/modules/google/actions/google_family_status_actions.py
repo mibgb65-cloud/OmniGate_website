@@ -101,7 +101,7 @@ class GoogleFamilyActions:
 
             # 核心优化：并行执行所有成员的详情页抓取
             results = await asyncio.gather(*tasks)
-            members = [res for res in results if res is not None]
+            members = self._dedupe_members([res for res in results if res is not None])
         else:
             logger.info("当前无需抓取成员详情（家庭组未开通或无可解析成员）。")
 
@@ -302,6 +302,32 @@ class GoogleFamilyActions:
                 return detail
             await asyncio.sleep(random.uniform(0.3, 0.5))
         return detail
+
+    def _dedupe_members(self, members: list[GoogleFamilyMemberInfo]) -> list[GoogleFamilyMemberInfo]:
+        deduped: list[GoogleFamilyMemberInfo] = []
+        seen_keys: set[str] = set()
+
+        for item in members:
+            key = self._build_member_dedupe_key(item)
+            if key in seen_keys:
+                logger.warning("%s 检测到重复家庭成员，已去重 | key=%s", self._LOG_PREFIX, key)
+                continue
+            seen_keys.add(key)
+            deduped.append(item)
+        return deduped
+
+    def _build_member_dedupe_key(self, item: GoogleFamilyMemberInfo) -> str:
+        email = self._extract_email(item.member_email)
+        if email:
+            return f"email:{email}"
+
+        href = self._to_absolute_member_url(item.member_href)
+        if href:
+            return f"href:{href.lower()}"
+
+        name = (self._norm_text(item.member_name) or "-").lower()
+        role = (self._norm_text(item.member_role) or "-").lower()
+        return f"name-role:{name}|{role}"
 
     # 下方辅助方法保持不变
     def _to_absolute_member_url(self, href: Any) -> str | None:
