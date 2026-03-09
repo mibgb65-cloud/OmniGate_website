@@ -566,6 +566,7 @@ onBeforeUnmount(() => {
         :credential-vault-items="credentialVaultItems"
         :copied-field="copiedField"
         :lifecycle-items="lifecycleItems"
+        :totp-secret="detail?.totpSecret"
         @quick-status="handleQuickStatus"
         @copy="handleVaultCopy"
       />

@@ -1,5 +1,6 @@
 <script setup>
 import { Check, CopyDocument } from '@element-plus/icons-vue'
+import TotpCodeTool from '@/components/security/TotpCodeTool.vue'
 
 const props = defineProps({
   statusActionCards: {
@@ -21,6 +22,10 @@ const props = defineProps({
   lifecycleItems: {
     type: Array,
     default: () => [],
+  },
+  totpSecret: {
+    type: String,
+    default: '',
   },
 })
 
@@ -101,6 +106,18 @@ function resolveCredentialVariant(key) {
       </div>
 
       <p class="vault-panel-hint">长字段默认折叠展示，复制后可直接用于人工接管或任务执行。</p>
+    </article>
+
+    <article class="surface-card">
+      <header class="panel-header panel-header--compact">
+        <div>
+          <span class="section-kicker">Live 2FA Code</span>
+          <h2>动态验证码</h2>
+          <p>直接根据当前账号的 2FA 密钥生成验证码，便于复制后立即使用。</p>
+        </div>
+      </header>
+
+      <TotpCodeTool :secret="props.totpSecret" :allow-manual-input="false" />
     </article>
 
     <article class="surface-card">
