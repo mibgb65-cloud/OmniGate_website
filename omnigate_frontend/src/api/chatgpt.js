@@ -40,6 +40,13 @@ export function getChatgptTaskStatusByRootRunId(rootRunId, config = {}) {
   })
 }
 
+export function dispatchChatgptSessionSyncTask(id) {
+  return request({
+    url: `/api/chatgpt/accounts/${id}/session/sync`,
+    method: 'post',
+  })
+}
+
 export function pageChatgptAccounts(params) {
   return request({
     url: '/api/chatgpt/accounts',

@@ -34,6 +34,11 @@ public class ChatGptTaskDispatchVO {
     private String status;
 
     /**
+     * 关联账号 ID。
+     */
+    private Long accountId;
+
+    /**
      * 请求自动注册数量。
      */
     private Integer requestedCount;

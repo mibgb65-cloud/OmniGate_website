@@ -13,6 +13,7 @@ import asyncpg
 from src.browser.browser_actions import BrowserActions, PageOpenTimeoutError
 from src.config.config import get_settings
 from src.modules.chatgpt.actions.chatgpt_2fa_action import ChatGPT2FAAction
+from src.modules.chatgpt.actions.chatgpt_session_action import ChatGPTGetSessionAction
 from src.modules.chatgpt.utils.account_generator import (
     generate_random_email,
     generate_random_name,
@@ -40,6 +41,7 @@ class OpenAISignupService:
         actions: BrowserActions | None = None,
         verification_code_service: GetChatGptVerificationCodeService | None = None,
         two_factor_action: ChatGPT2FAAction | None = None,
+        session_action: ChatGPTGetSessionAction | None = None,
         chatgpt_home_open_timeout_seconds: float | None = None,
     ) -> None:
         settings = get_settings()
@@ -49,6 +51,7 @@ class OpenAISignupService:
             GetChatGptVerificationCodeService(db_pool=db_pool) if db_pool is not None else None
         )
         self._two_factor_action = two_factor_action or ChatGPT2FAAction()
+        self._session_action = session_action or ChatGPTGetSessionAction()
         resolved_timeout = (
             chatgpt_home_open_timeout_seconds
             if chatgpt_home_open_timeout_seconds is not None
@@ -459,14 +462,17 @@ class OpenAISignupService:
                 "msg": f"账号已创建，但 2FA 配置失败: {exc}",
             }
 
-        self._log_flow(logging.INFO, "注册与 2FA 配置完成", stage="流程完成", email=email)
+        session_token = await self._try_get_session_token(page, email)
+
+        self._log_flow(logging.INFO, "注册、2FA 与 Session 抓取完成", stage="流程完成", email=email)
         return {
             "status": "REGISTERED_SUCCESS",
             "email": email,
             "password": password,
             "name": name,
             "totp_secret": totp_secret,
-            "msg": "注册成功，已完成资料填写、引导清理和 2FA 绑定",
+            "session_token": session_token,
+            "msg": "注册成功，已完成资料填写、引导清理、2FA 绑定与 Session 抓取",
         }
 
     async def _type_password(self, page: Any, password_element: Any, password: str) -> None:
@@ -579,6 +585,55 @@ class OpenAISignupService:
             email=email,
         )
         return totp_secret
+
+    async def _try_get_session_token(self, page: Any, email: str) -> str | None:
+        """尽量抓取当前账号的 ChatGPT session accessToken。"""
+
+        self._log_flow(logging.INFO, "开始抓取 Session 信息", stage="Session抓取", email=email)
+        try:
+            session_result = await self._session_action.get_session(page)
+        except Exception as exc:  # noqa: BLE001
+            self._log_flow(
+                logging.WARNING,
+                "Session 抓取异常，跳过保存",
+                stage="Session抓取",
+                email=email,
+                extra={"原因": exc},
+            )
+            return None
+
+        if not session_result.get("ok"):
+            self._log_flow(
+                logging.WARNING,
+                "Session 抓取失败，跳过保存",
+                stage="Session抓取",
+                email=email,
+                extra={"原因": session_result.get("reason") or session_result.get("message")},
+            )
+            return None
+
+        session_data = session_result.get("data")
+        if not isinstance(session_data, dict):
+            self._log_flow(
+                logging.WARNING,
+                "Session 抓取结果缺少 data 字段",
+                stage="Session抓取",
+                email=email,
+            )
+            return None
+
+        access_token = str(session_data.get("accessToken") or "").strip() or None
+        if not access_token:
+            self._log_flow(
+                logging.WARNING,
+                "Session 抓取成功但 accessToken 为空",
+                stage="Session抓取",
+                email=email,
+            )
+            return None
+
+        self._log_flow(logging.INFO, "Session 抓取成功", stage="Session抓取", email=email)
+        return access_token
 
     async def _reset_browser_state(self, browser: Any) -> None:
         """在同一个浏览器实例里清理 cookie 和站点存储，避免上一轮登录态干扰下一轮。"""

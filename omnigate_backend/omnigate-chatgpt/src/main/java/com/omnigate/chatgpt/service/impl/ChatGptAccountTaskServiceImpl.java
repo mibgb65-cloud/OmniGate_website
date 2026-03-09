@@ -2,6 +2,8 @@ package com.omnigate.chatgpt.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.omnigate.chatgpt.entity.ChatGptAccountBase;
+import com.omnigate.chatgpt.mapper.ChatGptAccountBaseMapper;
 import com.omnigate.chatgpt.mapper.ChatGptSystemSettingMapper;
 import com.omnigate.chatgpt.mapper.ChatGptWorkerTaskRunMapper;
 import com.omnigate.chatgpt.model.dto.ChatGptBatchRegisterTaskCreateDTO;
@@ -23,10 +25,10 @@ import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.ArrayList;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +43,9 @@ import java.util.UUID;
 public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService {
 
     private static final String MODULE_CHATGPT = "chatgpt";
+    private static final String ACTION_CREATE_SESSION = "create_session";
     private static final String ACTION_BATCH_REGISTER = "batch_register_chatgpt_accounts";
+    private static final String STATUS_ACTIVE = "active";
     private static final String STATUS_QUEUED = "queued";
     private static final int SINGLE_SIGNUP_COUNT = 1;
     private static final String DEFAULT_TRIGGERED_BY = "system";
@@ -52,6 +56,7 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
     private static final String CLOUDMAIL_AUTH_URL_KEY = "cloudmail.auth_url";
     private static final String CHATGPT_REGISTRATION_EMAIL_SUFFIX_KEY = "chatgpt.registration_email_suffix";
 
+    private final ChatGptAccountBaseMapper chatGptAccountBaseMapper;
     private final ChatGptWorkerTaskRunMapper workerTaskRunMapper;
     private final ChatGptSystemSettingMapper systemSettingMapper;
     private final StringRedisTemplate stringRedisTemplate;
@@ -64,54 +69,18 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
     public ChatGptTaskDispatchVO dispatchBatchRegisterTask(ChatGptBatchRegisterTaskCreateDTO createDTO) {
         int signupCount = normalizeSignupCount(createDTO == null ? null : createDTO.getSignupCount());
         validateBatchRegisterSettings();
-        UUID taskRunId = UUID.randomUUID();
-        UUID rootRunId = UUID.randomUUID();
-        String payloadJson = buildTaskPayloadJson(signupCount, 1);
-        String triggeredBy = resolveTriggeredBy();
-        int maxAttempts = resolveRetryMaxAttempts();
+        Map<String, Object> bizPayload = new LinkedHashMap<>();
+        bizPayload.put("signup_count", SINGLE_SIGNUP_COUNT);
+        bizPayload.put("requested_count", signupCount);
+        bizPayload.put("current_index", 1);
+        return dispatchTask(null, ACTION_BATCH_REGISTER, bizPayload, signupCount);
+    }
 
-        int inserted = workerTaskRunMapper.insertTaskRun(
-                taskRunId,
-                rootRunId,
-                1,
-                maxAttempts,
-                STATUS_QUEUED,
-                triggeredBy,
-                payloadJson
-        );
-        if (inserted <= 0) {
-            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "创建 ChatGPT 自动注册任务失败");
-        }
-
-        Map<String, String> streamFields = new LinkedHashMap<>();
-        streamFields.put("task_run_id", taskRunId.toString());
-        streamFields.put("root_run_id", rootRunId.toString());
-        streamFields.put("payload", payloadJson);
-        streamFields.put("created_at", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
-
-        try {
-            RecordId recordId = stringRedisTemplate.opsForStream().add(
-                    StreamRecords.mapBacked(streamFields).withStreamKey(taskStream)
-            );
-            if (recordId == null) {
-                cleanupTaskRun(taskRunId);
-                throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "投递 ChatGPT 自动注册任务到队列失败");
-            }
-        } catch (BizException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            cleanupTaskRun(taskRunId);
-            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "投递 ChatGPT 自动注册任务异常: " + ex.getMessage());
-        }
-
-        ChatGptTaskDispatchVO vo = new ChatGptTaskDispatchVO();
-        vo.setTaskRunId(taskRunId.toString());
-        vo.setRootRunId(rootRunId.toString());
-        vo.setModule(MODULE_CHATGPT);
-        vo.setAction(ACTION_BATCH_REGISTER);
-        vo.setStatus(STATUS_QUEUED);
-        vo.setRequestedCount(signupCount);
-        return vo;
+    @Override
+    public ChatGptTaskDispatchVO dispatchSessionSyncTask(Long accountId) {
+        ChatGptAccountBase account = getRequiredOperableAccount(accountId);
+        Map<String, Object> bizPayload = Map.of("chatgpt_account_id", account.getId());
+        return dispatchTask(account.getId(), ACTION_CREATE_SESSION, bizPayload, null);
     }
 
     @Override
@@ -171,6 +140,61 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
         }
     }
 
+    private ChatGptTaskDispatchVO dispatchTask(Long accountId,
+                                               String action,
+                                               Map<String, Object> bizPayload,
+                                               Integer requestedCount) {
+        UUID taskRunId = UUID.randomUUID();
+        UUID rootRunId = UUID.randomUUID();
+        String payloadJson = buildTaskPayloadJson(action, bizPayload);
+        String triggeredBy = resolveTriggeredBy();
+        int maxAttempts = resolveRetryMaxAttempts();
+
+        int inserted = workerTaskRunMapper.insertTaskRun(
+                taskRunId,
+                rootRunId,
+                1,
+                maxAttempts,
+                STATUS_QUEUED,
+                triggeredBy,
+                payloadJson
+        );
+        if (inserted <= 0) {
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "创建 ChatGPT Worker 任务失败");
+        }
+
+        Map<String, String> streamFields = new LinkedHashMap<>();
+        streamFields.put("task_run_id", taskRunId.toString());
+        streamFields.put("root_run_id", rootRunId.toString());
+        streamFields.put("payload", payloadJson);
+        streamFields.put("created_at", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
+
+        try {
+            RecordId recordId = stringRedisTemplate.opsForStream().add(
+                    StreamRecords.mapBacked(streamFields).withStreamKey(taskStream)
+            );
+            if (recordId == null) {
+                cleanupTaskRun(taskRunId);
+                throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "投递 ChatGPT Worker 任务到队列失败");
+            }
+        } catch (BizException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            cleanupTaskRun(taskRunId);
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "投递 ChatGPT Worker 任务异常: " + ex.getMessage());
+        }
+
+        ChatGptTaskDispatchVO vo = new ChatGptTaskDispatchVO();
+        vo.setTaskRunId(taskRunId.toString());
+        vo.setRootRunId(rootRunId.toString());
+        vo.setModule(MODULE_CHATGPT);
+        vo.setAction(action);
+        vo.setStatus(STATUS_QUEUED);
+        vo.setAccountId(accountId);
+        vo.setRequestedCount(requestedCount);
+        return vo;
+    }
+
     private int normalizeSignupCount(Integer signupCount) {
         if (signupCount == null || signupCount <= 0) {
             throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "signupCount 必须大于 0");
@@ -178,19 +202,34 @@ public class ChatGptAccountTaskServiceImpl implements ChatGptAccountTaskService 
         return signupCount;
     }
 
-    private String buildTaskPayloadJson(int requestedCount, int currentIndex) {
-        Map<String, Object> bizPayload = new LinkedHashMap<>();
-        bizPayload.put("signup_count", SINGLE_SIGNUP_COUNT);
-        bizPayload.put("requested_count", requestedCount);
-        bizPayload.put("current_index", currentIndex);
+    private String buildTaskPayloadJson(String action, Map<String, Object> bizPayload) {
         Map<String, Object> taskPayload = new LinkedHashMap<>();
         taskPayload.put("module", MODULE_CHATGPT);
-        taskPayload.put("action", ACTION_BATCH_REGISTER);
+        taskPayload.put("action", action);
         taskPayload.put("payload", bizPayload);
         try {
             return objectMapper.writeValueAsString(taskPayload);
         } catch (JsonProcessingException ex) {
-            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "序列化 ChatGPT 自动注册任务参数失败: " + ex.getMessage());
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "序列化 ChatGPT Worker 任务参数失败: " + ex.getMessage());
+        }
+    }
+
+    private ChatGptAccountBase getRequiredOperableAccount(Long accountId) {
+        ChatGptAccountBase account = chatGptAccountBaseMapper.selectById(accountId);
+        if (account == null) {
+            throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "账号不存在");
+        }
+        if (!STATUS_ACTIVE.equalsIgnoreCase(normalizeSettingValue(account.getAccountStatus()))) {
+            throw new BizException(BizErrorCodeEnum.BAD_REQUEST, "仅 active 状态账号可刷新 Session");
+        }
+        assertCredentialPresent("邮箱", account.getEmail());
+        assertCredentialPresent("密码", account.getPassword());
+        return account;
+    }
+
+    private void assertCredentialPresent(String fieldLabel, String value) {
+        if (!StringUtils.hasText(normalizeSettingValue(value))) {
+            throw new BizException(BizErrorCodeEnum.BAD_REQUEST, fieldLabel + "不能为空，无法刷新 Session");
         }
     }
 

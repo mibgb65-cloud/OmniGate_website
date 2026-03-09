@@ -49,6 +49,7 @@ class _RetryThenSuccessSignupAction:
             "password": "pwd-2",
             "name": "Success",
             "totp_secret": "totp-secret",
+            "session_token": "session-2",
             "msg": "ok",
         }
 
@@ -79,16 +80,24 @@ class _AlwaysSuccessSignupAction:
             "password": f"pwd-{index}",
             "name": f"Success-{index}",
             "totp_secret": f"totp-{index}",
+            "session_token": f"session-{index}",
             "msg": "ok",
         }
 
 
 class _FakePersistence:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str | None]] = []
+        self.calls: list[tuple[str, str, str | None, str | None]] = []
 
-    async def create_account(self, email: str, password: str, totp_secret: str | None) -> int:
-        self.calls.append((email, password, totp_secret))
+    async def create_account(
+        self,
+        *,
+        email: str,
+        password: str,
+        session_token: str | None = None,
+        totp_secret: str | None = None,
+    ) -> int:
+        self.calls.append((email, password, session_token, totp_secret))
         return 101
 
 
@@ -112,7 +121,7 @@ class TestBatchRegisterChatGptAccountsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, result.success_count)
         self.assertEqual(0, result.failed_count)
         self.assertEqual(
-            [("success@example.com", "pwd-2", "totp-secret")],
+            [("success@example.com", "pwd-2", "session-2", "totp-secret")],
             persistence.calls,
         )
 
@@ -151,8 +160,8 @@ class TestBatchRegisterChatGptAccountsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, result.failed_count)
         self.assertEqual(
             [
-                ("success-1@example.com", "pwd-1", "totp-1"),
-                ("success-2@example.com", "pwd-2", "totp-2"),
+                ("success-1@example.com", "pwd-1", "session-1", "totp-1"),
+                ("success-2@example.com", "pwd-2", "session-2", "totp-2"),
             ],
             persistence.calls,
         )

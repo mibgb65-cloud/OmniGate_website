@@ -29,7 +29,6 @@ public class ChatGptAccountUpdateDTO {
     /**
      * 会话 Token。
      */
-    @Size(max = 1024, message = "SessionToken长度不能超过1024")
     private String sessionToken;
 
     /**

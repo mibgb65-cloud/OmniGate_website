@@ -98,6 +98,7 @@ class BatchRegisterChatGptAccountsService:
                     account_id = await self._account_persistence.create_account(
                         email=str(signup_result.get("email") or ""),
                         password=str(signup_result.get("password") or ""),
+                        session_token=str(signup_result.get("session_token") or "") or None,
                         totp_secret=str(signup_result.get("totp_secret") or "") or None,
                     )
                     persisted = True

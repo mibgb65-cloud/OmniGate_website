@@ -1,5 +1,9 @@
 """ChatGPT 相关 Service 返回结果模型。"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -23,3 +27,14 @@ class ChatGptBatchRegisterResult(BaseModel):
     success_count: int
     failed_count: int
     results: list[ChatGptBatchRegisterItemResult] = Field(default_factory=list)
+
+
+class UpdateChatGptSessionByAccountIdResult(BaseModel):
+    account_id: int
+    email: str
+    trace_id: str
+    login_result: dict[str, Any]
+    session_result: dict[str, Any] | None = None
+    session_token: str | None = None
+    persisted_to_db: bool = False
+    browser_kept_open: bool = True

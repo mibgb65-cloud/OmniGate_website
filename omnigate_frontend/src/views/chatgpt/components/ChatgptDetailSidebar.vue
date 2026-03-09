@@ -27,9 +27,37 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  sessionSyncLoading: {
+    type: Boolean,
+    default: false,
+  },
+  sessionSyncDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  sessionTask: {
+    type: Object,
+    default: null,
+  },
+  sessionTaskStatusText: {
+    type: String,
+    default: '未开始',
+  },
+  sessionTaskTagType: {
+    type: String,
+    default: 'info',
+  },
+  sessionTaskAlertType: {
+    type: String,
+    default: 'info',
+  },
+  sessionTaskActionText: {
+    type: String,
+    default: '-',
+  },
 })
 
-const emit = defineEmits(['quick-status', 'copy'])
+const emit = defineEmits(['quick-status', 'copy', 'sync-session'])
 
 function resolveCredentialVariant(key) {
   const normalized = String(key || '').trim().toLowerCase()
@@ -106,6 +134,62 @@ function resolveCredentialVariant(key) {
       </div>
 
       <p class="vault-panel-hint">长字段默认折叠展示，复制后可直接用于人工接管或任务执行。</p>
+    </article>
+
+    <article class="surface-card">
+      <header class="panel-header panel-header--compact">
+        <div>
+          <span class="section-kicker">Session Automation</span>
+          <h2>Session 更新</h2>
+          <p>触发 worker 登录 ChatGPT，重新抓取并回写当前账号的 SessionToken。</p>
+        </div>
+      </header>
+
+      <div class="automation-stack">
+        <el-button
+          type="primary"
+          class="session-sync-btn"
+          :loading="props.sessionSyncLoading"
+          :disabled="props.sessionSyncDisabled"
+          @click="emit('sync-session')"
+        >
+          更新 Session
+        </el-button>
+
+        <div v-if="props.sessionTask" class="task-status-card">
+          <el-alert :type="props.sessionTaskAlertType" :closable="false" show-icon>
+            <template #title>
+              最近任务：{{ props.sessionTaskActionText }} · {{ props.sessionTaskStatusText }}
+            </template>
+            <div class="task-meta-grid">
+              <div class="task-meta-item">
+                <span>状态</span>
+                <el-tag :type="props.sessionTaskTagType" effect="light">
+                  {{ props.sessionTaskStatusText }}
+                </el-tag>
+              </div>
+              <div class="task-meta-item">
+                <span>TaskRunId</span>
+                <strong>{{ props.sessionTask.taskRunId || '-' }}</strong>
+              </div>
+              <div class="task-meta-item">
+                <span>RootRunId</span>
+                <strong>{{ props.sessionTask.rootRunId || '-' }}</strong>
+              </div>
+              <div class="task-meta-item">
+                <span>重试</span>
+                <strong>{{ props.sessionTask.attemptNo || '-' }} / {{ props.sessionTask.maxAttempts || '-' }}</strong>
+              </div>
+              <div v-if="props.sessionTask.lastCheckpoint" class="task-meta-item">
+                <span>检查点</span>
+                <strong>{{ props.sessionTask.lastCheckpoint }}</strong>
+              </div>
+            </div>
+            <p v-if="props.sessionTask.errorMessage" class="task-error-text">{{ props.sessionTask.errorMessage }}</p>
+          </el-alert>
+        </div>
+        <p v-else class="task-placeholder">暂未发起 Session 更新任务。</p>
+      </div>
     </article>
 
     <article class="surface-card">
@@ -390,6 +474,59 @@ function resolveCredentialVariant(key) {
   line-height: 1.6;
 }
 
+.automation-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.session-sync-btn {
+  width: 100%;
+  border-radius: 14px;
+}
+
+.task-status-card {
+  margin-top: 2px;
+}
+
+.task-meta-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-meta-item {
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.task-meta-item span {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.task-meta-item strong {
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.task-error-text {
+  margin: 12px 0 0;
+  color: #991b1b;
+  word-break: break-word;
+}
+
+.task-placeholder {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+
 .meta-list {
   display: grid;
 }
@@ -435,6 +572,10 @@ function resolveCredentialVariant(key) {
   .credential-item {
     gap: 6px;
     padding: 8px;
+  }
+
+  .task-meta-grid {
+    grid-template-columns: 1fr;
   }
 }
 

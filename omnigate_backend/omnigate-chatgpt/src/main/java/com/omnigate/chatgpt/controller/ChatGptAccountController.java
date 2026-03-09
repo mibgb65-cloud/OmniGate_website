@@ -7,7 +7,9 @@ import com.omnigate.chatgpt.model.dto.ChatGptAccountPageQueryDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountStatusDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountUpdateDTO;
 import com.omnigate.chatgpt.model.vo.ChatGptAccountVO;
+import com.omnigate.chatgpt.model.vo.ChatGptTaskDispatchVO;
 import com.omnigate.chatgpt.service.ChatGptAccountService;
+import com.omnigate.chatgpt.service.ChatGptAccountTaskService;
 import com.omnigate.common.response.Result;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -36,6 +38,7 @@ import java.util.List;
 public class ChatGptAccountController {
 
     private final ChatGptAccountService chatGptAccountService;
+    private final ChatGptAccountTaskService chatGptAccountTaskService;
 
     /**
      * 新增单个账号。
@@ -143,5 +146,16 @@ public class ChatGptAccountController {
     public Result<Integer> batchDeleteAccounts(@RequestBody @NotEmpty(message = "账号ID列表不能为空")
                                                List<@Positive(message = "账号ID必须大于0") Long> ids) {
         return Result.success(chatGptAccountService.batchDeleteAccounts(ids));
+    }
+
+    /**
+     * 投递单个账号 Session 刷新任务。
+     *
+     * @param id 账号 ID
+     * @return 任务投递结果
+     */
+    @PostMapping("/{id}/session/sync")
+    public Result<ChatGptTaskDispatchVO> syncSession(@PathVariable @Positive(message = "账号ID必须大于0") Long id) {
+        return Result.success(chatGptAccountTaskService.dispatchSessionSyncTask(id));
     }
 }

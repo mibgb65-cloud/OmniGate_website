@@ -5,7 +5,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import {
   deleteChatgptAccount,
+  dispatchChatgptSessionSyncTask,
   getChatgptAccount,
+  getChatgptTaskStatus,
+  getChatgptTaskStatusByRootRunId,
   updateChatgptAccount,
   updateChatgptAccountStatus,
 } from '@/api/chatgpt'
@@ -17,6 +20,8 @@ import ChatgptDetailSummaryGrid from '@/views/chatgpt/components/ChatgptDetailSu
 
 const route = useRoute()
 const router = useRouter()
+const TASK_STATUS_POLL_INTERVAL_MS = 2400
+const TASK_STATUS_RETRY_INTERVAL_MS = 4200
 
 const loading = ref(false)
 const saving = ref(false)
@@ -27,9 +32,19 @@ const isEditing = ref(false)
 const detail = ref(null)
 const editorPanelRef = ref()
 const copiedField = ref('')
+const actionLoading = reactive({
+  syncSession: false,
+})
+const activeTask = reactive(createTaskState())
 let copyFeedbackTimer = null
+let taskStatusPollTimer = null
 
 const accountId = computed(() => String(route.params.id || '').trim())
+const hasActiveTask = computed(() => Boolean(activeTask.taskRunId || activeTask.rootRunId))
+const isTaskPending = computed(() => {
+  const status = normalizeTaskStatus(activeTask.status)
+  return status === 'queued' || status === 'running'
+})
 const subTierOptions = [
   { label: 'Free', value: 'free' },
   { label: 'Plus', value: 'plus' },
@@ -75,13 +90,6 @@ const formRules = {
     validator: (_rule, value, callback) => {
       const normalized = normalizeCell(value)
       if (normalized && normalized.length > 255) return callback(new Error('密码长度不能超过255'))
-      callback()
-    },
-  }],
-  sessionToken: [{
-    trigger: ['blur', 'change'],
-    validator: (_rule, value, callback) => {
-      if (value && String(value).length > 1024) return callback(new Error('SessionToken 长度不能超过1024'))
       callback()
     },
   }],
@@ -258,6 +266,146 @@ const postureItems = computed(() => {
 function normalizeCell(value) {
   const text = String(value ?? '').trim()
   return text || undefined
+}
+
+function normalizeTaskStatus(status) {
+  return String(status || '').trim().toLowerCase()
+}
+
+function resolveTaskStatusText(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'queued') return '排队中'
+  if (normalized === 'running') return '执行中'
+  if (normalized === 'success') return '已成功'
+  if (normalized === 'failed') return '已失败'
+  if (normalized === 'cancelled') return '已取消'
+  if (normalized === 'timeout') return '已超时'
+  return '未开始'
+}
+
+function resolveTaskTagType(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'success') return 'success'
+  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'timeout') return 'danger'
+  if (normalized === 'running') return 'warning'
+  return 'info'
+}
+
+function resolveTaskAlertType(status) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === 'success') return 'success'
+  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'timeout') return 'error'
+  if (normalized === 'running') return 'warning'
+  return 'info'
+}
+
+function resolveTaskActionText(action) {
+  const normalized = String(action || '').trim()
+  if (normalized === 'create_session') return '刷新 Session'
+  if (normalized === 'batch_register_chatgpt_accounts') return '自动注册'
+  return normalized || '-'
+}
+
+function isTerminalTaskStatus(status) {
+  const normalized = normalizeTaskStatus(status)
+  return ['success', 'failed', 'cancelled', 'timeout'].includes(normalized)
+}
+
+function createTaskState() {
+  return {
+    taskRunId: '',
+    rootRunId: '',
+    action: '',
+    status: '',
+    errorMessage: '',
+    lastCheckpoint: '',
+    attemptNo: '',
+    maxAttempts: '',
+    terminalNotified: false,
+  }
+}
+
+function syncTaskState(taskData = {}) {
+  activeTask.taskRunId = String(taskData?.taskRunId || activeTask.taskRunId || '').trim()
+  activeTask.rootRunId = String(taskData?.rootRunId || activeTask.rootRunId || '').trim()
+  activeTask.action = String(taskData?.action || activeTask.action || '').trim()
+  activeTask.status = String(taskData?.status || activeTask.status || '').trim()
+  activeTask.errorMessage = String(taskData?.errorMessage || activeTask.errorMessage || '').trim()
+  activeTask.lastCheckpoint = String(taskData?.lastCheckpoint || activeTask.lastCheckpoint || '').trim()
+  activeTask.attemptNo = taskData?.attemptNo ?? activeTask.attemptNo ?? ''
+  activeTask.maxAttempts = taskData?.maxAttempts ?? activeTask.maxAttempts ?? ''
+}
+
+function stopTaskStatusPolling() {
+  if (taskStatusPollTimer) {
+    clearTimeout(taskStatusPollTimer)
+    taskStatusPollTimer = null
+  }
+}
+
+function scheduleTaskStatusPoll(delay = TASK_STATUS_POLL_INTERVAL_MS) {
+  stopTaskStatusPolling()
+  if (!activeTask.rootRunId && !activeTask.taskRunId) {
+    return
+  }
+  taskStatusPollTimer = setTimeout(() => {
+    void pollTaskStatus()
+  }, delay)
+}
+
+async function handleTerminalTaskStatus() {
+  if (activeTask.terminalNotified) {
+    return
+  }
+  activeTask.terminalNotified = true
+
+  const status = normalizeTaskStatus(activeTask.status)
+  const taskLabel = resolveTaskActionText(activeTask.action)
+  if (status === 'success') {
+    await fetchDetail()
+    ElMessage.success(`${taskLabel}已完成`)
+    return
+  }
+
+  ElMessage.error(activeTask.errorMessage || `${taskLabel}执行失败`)
+}
+
+async function pollTaskStatus() {
+  const rootRunId = String(activeTask.rootRunId || '').trim()
+  const taskRunId = String(activeTask.taskRunId || '').trim()
+  if (!rootRunId && !taskRunId) {
+    return
+  }
+
+  try {
+    const statusSnapshot = rootRunId
+      ? await getChatgptTaskStatusByRootRunId(rootRunId, { skipErrorMessage: true })
+      : await getChatgptTaskStatus(taskRunId, { skipErrorMessage: true })
+
+    if (!statusSnapshot) {
+      scheduleTaskStatusPoll(TASK_STATUS_RETRY_INTERVAL_MS)
+      return
+    }
+
+    syncTaskState(statusSnapshot)
+
+    if (isTerminalTaskStatus(activeTask.status)) {
+      stopTaskStatusPolling()
+      await handleTerminalTaskStatus()
+      return
+    }
+
+    scheduleTaskStatusPoll()
+  } catch {
+    scheduleTaskStatusPoll(TASK_STATUS_RETRY_INTERVAL_MS)
+  }
+}
+
+function activateTask(dispatchResult) {
+  Object.assign(activeTask, createTaskState())
+  activeTask.terminalNotified = false
+  syncTaskState(dispatchResult)
+  scheduleTaskStatusPoll(1200)
 }
 
 function toNullableText(value) {
@@ -465,6 +613,21 @@ async function handleQuickStatus(nextStatus) {
   }
 }
 
+async function handleSyncSession() {
+  if (!detail.value?.id || isTaskPending.value) {
+    return
+  }
+
+  actionLoading.syncSession = true
+  try {
+    const dispatchResult = await dispatchChatgptSessionSyncTask(detail.value.id)
+    activateTask(dispatchResult)
+    ElMessage.success(`Session 更新任务已入队，taskRunId=${dispatchResult?.taskRunId || '-'}`)
+  } finally {
+    actionLoading.syncSession = false
+  }
+}
+
 async function handleDelete() {
   if (!detail.value?.id) return
 
@@ -513,6 +676,7 @@ onBeforeUnmount(() => {
     clearTimeout(copyFeedbackTimer)
     copyFeedbackTimer = null
   }
+  stopTaskStatusPolling()
 })
 </script>
 
@@ -567,8 +731,16 @@ onBeforeUnmount(() => {
         :copied-field="copiedField"
         :lifecycle-items="lifecycleItems"
         :totp-secret="detail?.totpSecret"
+        :session-sync-loading="actionLoading.syncSession"
+        :session-sync-disabled="!detail?.id || isTaskPending"
+        :session-task="hasActiveTask ? activeTask : null"
+        :session-task-status-text="resolveTaskStatusText(activeTask.status)"
+        :session-task-tag-type="resolveTaskTagType(activeTask.status)"
+        :session-task-alert-type="resolveTaskAlertType(activeTask.status)"
+        :session-task-action-text="resolveTaskActionText(activeTask.action)"
         @quick-status="handleQuickStatus"
         @copy="handleVaultCopy"
+        @sync-session="handleSyncSession"
       />
     </section>
   </div>

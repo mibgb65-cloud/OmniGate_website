@@ -131,6 +131,51 @@ class ChatGptAccountPersistence:
             )
         except asyncpg.UniqueViolationError as exc:
             raise ValueError(f"ChatGPT 账号邮箱已存在: {normalized_email}") from exc
+        except asyncpg.exceptions.StringDataRightTruncationError as exc:
+            self._raise_session_token_too_long_error(exc)
         if inserted_id is None:
             raise RuntimeError(f"插入 ChatGPT 账号失败: email={normalized_email}")
         return int(inserted_id)
+
+    async def update_session_token(
+        self,
+        *,
+        account_id: int,
+        session_token: str,
+        updated_by: int | None = None,
+    ) -> None:
+        """更新指定 ChatGPT 账号的 session_token。"""
+
+        normalized_session_token = (session_token or "").strip()
+        if int(account_id) <= 0:
+            raise ValueError("account_id 必须大于 0")
+        if not normalized_session_token:
+            raise ValueError("session_token 不能为空")
+
+        encrypted_session_token = self._encryptor.encrypt_base64(normalized_session_token)
+        try:
+            command_tag = await self._pool.execute(
+                """
+                UPDATE acc_chatgpt_base
+                SET session_token = $2,
+                    updated_by = COALESCE($3, updated_by),
+                    updated_at = now()
+                WHERE id = $1
+                  AND deleted = 0
+                """,
+                int(account_id),
+                encrypted_session_token,
+                updated_by,
+            )
+        except asyncpg.exceptions.StringDataRightTruncationError as exc:
+            self._raise_session_token_too_long_error(exc)
+        if command_tag == "UPDATE 0":
+            raise ValueError(f"ChatGPT 账号不存在或已删除: account_id={account_id}")
+
+    @staticmethod
+    def _raise_session_token_too_long_error(exc: Exception) -> None:
+        raise RuntimeError(
+            "ChatGPT session_token 超出数据库字段长度。"
+            "请先执行后端迁移 `V1.0.11__alter_chatgpt_session_token_to_text.sql`，"
+            "将 `acc_chatgpt_base.session_token` 扩容为 TEXT。"
+        ) from exc

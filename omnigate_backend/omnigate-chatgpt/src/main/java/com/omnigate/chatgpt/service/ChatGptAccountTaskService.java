@@ -18,6 +18,14 @@ public interface ChatGptAccountTaskService {
     ChatGptTaskDispatchVO dispatchBatchRegisterTask(ChatGptBatchRegisterTaskCreateDTO createDTO);
 
     /**
+     * 投递单个账号 Session 刷新任务。
+     *
+     * @param accountId 账号 ID
+     * @return 任务投递结果
+     */
+    ChatGptTaskDispatchVO dispatchSessionSyncTask(Long accountId);
+
+    /**
      * 按 taskRunId 查询任务状态。
      *
      * @param taskRunId 任务执行记录 ID
