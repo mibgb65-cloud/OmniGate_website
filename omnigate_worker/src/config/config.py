@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     CHATGPT_HOME_OPEN_TIMEOUT_SECONDS: int = 45
     # ChatGPT 首页导航额外重试次数；总尝试次数 = 1 + 本值
     CHATGPT_HOME_OPEN_MAX_RETRIES: int = 2
+    # ChatGPT 登录页元素等待秒数；用于首页按钮、输入框等基础元素
+    CHATGPT_LOGIN_ELEMENT_TIMEOUT_SECONDS: int = 30
+    # ChatGPT 登录流程跳转等待秒数；用于邮箱->密码、密码->2FA/聊天页等阶段切换
+    CHATGPT_LOGIN_TRANSITION_TIMEOUT_SECONDS: int = 60
 
     # 从项目根目录的 .env 读取配置，忽略未定义字段
     model_config = SettingsConfigDict(

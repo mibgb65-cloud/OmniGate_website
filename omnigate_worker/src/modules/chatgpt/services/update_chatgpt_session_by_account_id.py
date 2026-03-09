@@ -124,7 +124,13 @@ class UpdateChatGptSessionByAccountIdService(ChatGptServiceBase):
             elif persist_to_db and session_result and session_result.get("ok"):
                 logger.warning("%s Session 返回成功但缺少 accessToken，跳过数据库写回 | trace_id=%s", self._LOG_PREFIX, trace_id)
         else:
-            logger.warning("%s 登录未成功，跳过 Session 提取 | trace_id=%s", self._LOG_PREFIX, trace_id)
+            logger.warning(
+                "%s 登录未成功，跳过 Session 提取 | trace_id=%s | step=%s | reason=%s",
+                self._LOG_PREFIX,
+                trace_id,
+                login_result.get("step"),
+                login_result.get("reason"),
+            )
 
         result = UpdateChatGptSessionByAccountIdResult(
             account_id=credential.account_id,
