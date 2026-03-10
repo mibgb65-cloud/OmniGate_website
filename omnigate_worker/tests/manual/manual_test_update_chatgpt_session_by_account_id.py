@@ -22,7 +22,7 @@ from src.utils.logging_setup import configure_colored_logging
 from tests.manual.github_manual_test_support import ManualVisibleBrowserActions
 
 
-DEFAULT_ACCOUNT_ID = 5
+DEFAULT_ACCOUNT_ID = 7
 
 
 class ManualTestUpdateChatGptSessionByAccountId:
@@ -75,6 +75,8 @@ class ManualTestUpdateChatGptSessionByAccountId:
         session_result = copied.get("session_result")
         if isinstance(session_result, dict):
             session_result = dict(session_result)
+            if session_result.get("raw_text"):
+                session_result["raw_text"] = "<redacted>"
             session_data = session_result.get("data")
             if isinstance(session_data, dict) and session_data.get("accessToken"):
                 session_data = dict(session_data)

@@ -12,6 +12,7 @@ import asyncpg
 from src.browser.browser_actions import BrowserActions
 from src.db import ChatGptAccountPersistence, ChatGptAccountRepository
 from src.modules.chatgpt.actions.chatgpt_session_action import ChatGPTGetSessionAction
+from src.modules.chatgpt.actions.chatgpt_session_action import extract_session_storage_content
 from src.modules.chatgpt.actions.chatgpt_signin_action import ChatGPTLoginAction
 from src.modules.chatgpt.models.chatgpt_service_params import UpdateChatGptSessionByAccountIdParams
 from src.modules.chatgpt.models.chatgpt_service_results import UpdateChatGptSessionByAccountIdResult
@@ -109,10 +110,7 @@ class UpdateChatGptSessionByAccountIdService(ChatGptServiceBase):
                 logger.exception("%s ChatGPT Session 动作异常 | trace_id=%s", self._LOG_PREFIX, trace_id)
                 session_result = {"ok": False, "step": "get_session_exception", "reason": str(exc)}
 
-            if isinstance(session_result, dict):
-                session_data = session_result.get("data")
-                if isinstance(session_data, dict):
-                    session_token = str(session_data.get("accessToken") or "").strip() or None
+            session_token = extract_session_storage_content(session_result)
 
             if persist_to_db and session_result and session_result.get("ok") and session_token:
                 log_step(5, "写回 session_token 到数据库")
@@ -122,7 +120,11 @@ class UpdateChatGptSessionByAccountIdService(ChatGptServiceBase):
                 )
                 persisted_to_db = True
             elif persist_to_db and session_result and session_result.get("ok"):
-                logger.warning("%s Session 返回成功但缺少 accessToken，跳过数据库写回 | trace_id=%s", self._LOG_PREFIX, trace_id)
+                logger.warning(
+                    "%s Session 返回成功但缺少可持久化内容，跳过数据库写回 | trace_id=%s",
+                    self._LOG_PREFIX,
+                    trace_id,
+                )
         else:
             logger.warning(
                 "%s 登录未成功，跳过 Session 提取 | trace_id=%s | step=%s | reason=%s",

@@ -16,8 +16,12 @@ class _SuccessService:
             "email": "demo@example.com",
             "trace_id": "trace-1",
             "login_result": {"ok": True},
-            "session_result": {"ok": True, "data": {"accessToken": "sess_123"}},
-            "session_token": "sess_123",
+            "session_result": {
+                "ok": True,
+                "raw_text": '{"accessToken":"sess_123","user":{"email":"demo@example.com"}}',
+                "data": {"accessToken": "sess_123"},
+            },
+            "session_token": '{"accessToken":"sess_123","user":{"email":"demo@example.com"}}',
             "persisted_to_db": True,
             "browser_kept_open": False,
         }
@@ -39,6 +43,7 @@ class TestCreateChatGptSessionTask(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("success", result["status"])
         self.assertEqual(12, result["data"]["account_id"])
         self.assertEqual("<redacted>", result["data"]["session_token"])
+        self.assertEqual("<redacted>", result["data"]["session_result"]["raw_text"])
         self.assertEqual(
             "<redacted>",
             result["data"]["session_result"]["data"]["accessToken"],

@@ -1,83 +1,144 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 logger = logging.getLogger(__name__)
 
 
+def extract_session_storage_content(session_result: Mapping[str, Any] | None) -> str | None:
+    """从 session 抓取结果中提取适合落库的完整页面内容。"""
+
+    if not isinstance(session_result, Mapping):
+        return None
+
+    session_data = session_result.get("data")
+    if not isinstance(session_data, Mapping):
+        return None
+
+    access_token = str(session_data.get("accessToken") or "").strip()
+    if not access_token:
+        return None
+
+    raw_text = str(session_result.get("raw_text") or "").strip()
+    if raw_text:
+        return raw_text
+
+    try:
+        return json.dumps(session_data, ensure_ascii=False, separators=(",", ":"))
+    except TypeError:
+        return None
+
+
 class ChatGPTGetSessionAction:
     """获取 ChatGPT 当前会话 Session JSON 的动作"""
+
+    _LOG_PREFIX = "[ChatGPT获取Session]"
+    _SESSION_URL = "https://chatgpt.com/api/auth/session"
+    _TOTAL_STEPS = 2
 
     async def get_session(self, page: Any) -> Dict[str, Any]:
         """
         访问 auth/session 接口并提取 JSON 数据
         :param page: 已经登录了 ChatGPT 的 nodriver page 对象
         """
-        logger.info("[*] 准备获取 ChatGPT Session JSON 数据...")
+        self._log_flow(logging.INFO, "开始获取 Session JSON 数据")
 
         try:
-            # ==========================================
-            # 1. 访问 session API 接口页面
-            # ==========================================
-            logger.info("[1] 正在请求 https://chatgpt.com/api/auth/session ...")
-            await page.get("https://chatgpt.com/api/auth/session")
+            self._log_flow(
+                logging.INFO,
+                "请求 Session API",
+                step_no=1,
+                total_steps=self._TOTAL_STEPS,
+                extra={"url": self._SESSION_URL},
+            )
+            await page.get(self._SESSION_URL)
 
-            # API 接口纯文本渲染很快，通常 1.5 到 2 秒足够了
             await asyncio.sleep(2.0)
 
-            # ==========================================
-            # 2. 提取页面纯文本内容
-            # ==========================================
-            logger.info("[2] 正在提取并解析页面 JSON 数据...")
+            self._log_flow(logging.INFO, "提取并解析页面 JSON 数据", step_no=2, total_steps=self._TOTAL_STEPS)
             js_extract = """
             (() => {
                 // 直接获取 body 的纯文本，这能完美规避浏览器自带的 JSON Viewer 格式化标签
                 return document.body.innerText || document.documentElement.innerText;
             })();
             """
-            raw_text = await page.evaluate(js_extract)
+            raw_text = str(await page.evaluate(js_extract) or "").strip()
 
-            if not raw_text or not raw_text.strip():
+            if not raw_text:
                 return {"ok": False, "step": "extract_text", "reason": "页面内容为空，未能抓取到任何文本"}
 
             # ==========================================
             # 3. 解析 JSON 数据
             # ==========================================
             try:
-                session_data = json.loads(raw_text.strip())
+                session_data = json.loads(raw_text)
             except json.JSONDecodeError as e:
-                logger.error(f"❌ JSON 解析失败，抓取到的原始文本前 100 字符: {raw_text[:100]}")
+                self._log_flow(
+                    logging.ERROR,
+                    "JSON 解析失败",
+                    step_no=2,
+                    total_steps=self._TOTAL_STEPS,
+                    extra={"raw_text_preview": raw_text[:100], "reason": e},
+                )
                 return {"ok": False, "step": "parse_json", "reason": f"提取的内容不是合法的 JSON: {e}"}
 
-            # ==========================================
-            # 4. 数据有效性校验
-            # ==========================================
-            # 如果未登录，接口通常会返回 {}
             if not session_data or "accessToken" not in session_data:
-                logger.warning("[!] 成功获取 JSON，但里面没有 accessToken。账号可能处于未登录状态或 Token 已失效。")
+                self._log_flow(
+                    logging.WARNING,
+                    "成功获取 JSON，但缺少 accessToken",
+                    step_no=self._TOTAL_STEPS,
+                    total_steps=self._TOTAL_STEPS,
+                )
                 return {
                     "ok": True,
                     "step": "done",
                     "message": "获取成功，但无有效登录信息",
-                    "data": session_data
+                    "data": session_data,
+                    "raw_text": raw_text,
                 }
 
-            logger.info("🎉 成功提取 Session 数据！已获取到 accessToken。")
+            self._log_flow(logging.INFO, "Session 数据提取成功", step_no=self._TOTAL_STEPS, total_steps=self._TOTAL_STEPS)
             return {
                 "ok": True,
                 "step": "done",
                 "message": "获取 JSON 成功",
-                "data": session_data
+                "data": session_data,
+                "raw_text": raw_text,
             }
 
         except Exception as e:
-            logger.error(f"❌ 获取 Session 过程中发生未捕获异常: {e}")
+            self._log_flow(logging.ERROR, "获取 Session 过程中发生未捕获异常", extra={"reason": e})
             return {
                 "ok": False,
                 "step": "exception",
                 "reason": str(e)
             }
+
+    @classmethod
+    def _log_flow(
+        cls,
+        level: int,
+        message: str,
+        *,
+        step_no: int | None = None,
+        total_steps: int | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        context_parts: list[str] = []
+        if step_no is not None and total_steps is not None:
+            context_parts.append(f"步骤={step_no}/{total_steps}")
+        for key, value in (extra or {}).items():
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                context_parts.append(f"{key}={text}")
+
+        if context_parts:
+            logger.log(level, "%s %s | %s", cls._LOG_PREFIX, message, " | ".join(context_parts))
+            return
+        logger.log(level, "%s %s", cls._LOG_PREFIX, message)
 
 
 # ==========================================

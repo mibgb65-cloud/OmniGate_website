@@ -13,7 +13,10 @@ import asyncpg
 from src.browser.browser_actions import BrowserActions, PageOpenTimeoutError
 from src.config.config import get_settings
 from src.modules.chatgpt.actions.chatgpt_2fa_action import ChatGPT2FAAction
-from src.modules.chatgpt.actions.chatgpt_session_action import ChatGPTGetSessionAction
+from src.modules.chatgpt.actions.chatgpt_session_action import (
+    ChatGPTGetSessionAction,
+    extract_session_storage_content,
+)
 from src.modules.chatgpt.utils.account_generator import (
     generate_random_email,
     generate_random_name,
@@ -462,7 +465,7 @@ class OpenAISignupService:
                 "msg": f"账号已创建，但 2FA 配置失败: {exc}",
             }
 
-        session_token = await self._try_get_session_token(page, email)
+        session_token = await self._try_get_session_content(page, email)
 
         self._log_flow(logging.INFO, "注册、2FA 与 Session 抓取完成", stage="流程完成", email=email)
         return {
@@ -586,8 +589,8 @@ class OpenAISignupService:
         )
         return totp_secret
 
-    async def _try_get_session_token(self, page: Any, email: str) -> str | None:
-        """尽量抓取当前账号的 ChatGPT session accessToken。"""
+    async def _try_get_session_content(self, page: Any, email: str) -> str | None:
+        """尽量抓取当前账号的 ChatGPT 完整 session 页面内容。"""
 
         self._log_flow(logging.INFO, "开始抓取 Session 信息", stage="Session抓取", email=email)
         try:
@@ -622,18 +625,18 @@ class OpenAISignupService:
             )
             return None
 
-        access_token = str(session_data.get("accessToken") or "").strip() or None
-        if not access_token:
+        session_content = extract_session_storage_content(session_result)
+        if not session_content:
             self._log_flow(
                 logging.WARNING,
-                "Session 抓取成功但 accessToken 为空",
+                "Session 抓取成功但缺少可持久化的完整内容",
                 stage="Session抓取",
                 email=email,
             )
             return None
 
         self._log_flow(logging.INFO, "Session 抓取成功", stage="Session抓取", email=email)
-        return access_token
+        return session_content
 
     async def _reset_browser_state(self, browser: Any) -> None:
         """在同一个浏览器实例里清理 cookie 和站点存储，避免上一轮登录态干扰下一轮。"""

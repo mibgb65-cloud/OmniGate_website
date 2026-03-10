@@ -123,6 +123,7 @@ class TestUpdateChatGptSessionByAccountIdService(unittest.IsolatedAsyncioTestCas
             {
                 "ok": True,
                 "step": "done",
+                "raw_text": '{"accessToken":"sess_123456","user":{"email":"demo@example.com"}}',
                 "data": {"accessToken": "sess_123456", "user": {"email": "demo@example.com"}},
             }
         )
@@ -148,9 +149,15 @@ class TestUpdateChatGptSessionByAccountIdService(unittest.IsolatedAsyncioTestCas
         self.assertEqual(len(session_action.calls), 1)
         self.assertEqual(len(persistence.calls), 1)
         self.assertEqual(persistence.calls[0]["account_id"], 301)
-        self.assertEqual(persistence.calls[0]["session_token"], "sess_123456")
+        self.assertEqual(
+            persistence.calls[0]["session_token"],
+            '{"accessToken":"sess_123456","user":{"email":"demo@example.com"}}',
+        )
         self.assertEqual(result["account_id"], 301)
-        self.assertEqual(result["session_token"], "sess_123456")
+        self.assertEqual(
+            result["session_token"],
+            '{"accessToken":"sess_123456","user":{"email":"demo@example.com"}}',
+        )
         self.assertTrue(result["persisted_to_db"])
 
         await service.close()
