@@ -170,16 +170,25 @@ class ChatGptTwoFactorTool:
 
         if verify_state["state"] != "done":
             current_url = str(verify_state.get("current_url") or "").strip() or "未知"
+            authenticator_enabled = "是" if verify_state.get("authenticator_enabled") else "否"
+            setup_panel_visible = "是" if verify_state.get("setup_panel_visible") else "否"
             self._log_flow(
                 logging.WARNING,
                 "等待 2FA 绑定完成超时",
                 stage="验证码提交",
-                extra={"当前URL": current_url},
+                extra={
+                    "当前URL": current_url,
+                    "开关已开启": authenticator_enabled,
+                    "验证面板仍可见": setup_panel_visible,
+                },
             )
             return ChatGptTwoFactorSetupResult(
                 ok=False,
                 step="verify_transition",
-                reason=f"点击 Verify 后未确认到绑定完成，当前URL={current_url}",
+                reason=(
+                    "点击 Verify 后未确认到绑定完成，"
+                    f"开关已开启={authenticator_enabled}，验证面板仍可见={setup_panel_visible}"
+                ),
             )
 
         self._log_flow(
@@ -368,22 +377,16 @@ class ChatGptTwoFactorTool:
             snapshot = await self._collect_post_verify_state(page)
             last_state = snapshot
             if self._is_post_verify_success(snapshot):
-                return {
-                    "state": "done",
-                    "current_url": snapshot.get("current_url"),
-                }
+                return {**snapshot, "state": "done"}
 
             reason = str(snapshot.get("error_text") or "").strip()
             if reason:
-                return {
-                    "state": "error",
-                    "reason": reason,
-                    "current_url": snapshot.get("current_url"),
-                }
+                return {**snapshot, "state": "error", "reason": reason}
 
             await asyncio.sleep(self._POST_VERIFY_POLL_INTERVAL_SECONDS)
 
         return {
+            **last_state,
             "state": "timeout",
             "current_url": last_state.get("current_url") or await self._get_current_url(page),
         }
@@ -417,9 +420,19 @@ class ChatGptTwoFactorTool:
 
                 const otpInput = document.querySelector('input#totp_otp');
                 const prompt = document.querySelector('textarea#prompt-textarea, [id="prompt-textarea"]');
+                const copyCodeDiv = document.querySelector('div[aria-label="Copy code"]');
                 const btns = Array.from(document.querySelectorAll('button'));
                 const verifyBtn = btns.find(
                     b => (b.innerText || '').trim() === 'Verify' && isVisible(b)
+                );
+                const troubleScanningBtn = btns.find(
+                    b => (b.innerText || '').trim() === 'Trouble scanning?' && isVisible(b)
+                );
+                const setupPanelVisible = (
+                    isVisible(otpInput) ||
+                    isVisible(verifyBtn) ||
+                    isVisible(copyCodeDiv) ||
+                    isVisible(troubleScanningBtn)
                 );
 
                 const errorSelectors = [
@@ -466,6 +479,9 @@ class ChatGptTwoFactorTool:
                     current_url: window.location.href,
                     otp_input_visible: isVisible(otpInput),
                     verify_button_visible: isVisible(verifyBtn),
+                    copy_code_visible: isVisible(copyCodeDiv),
+                    trouble_scanning_visible: isVisible(troubleScanningBtn),
+                    setup_panel_visible: setupPanelVisible,
                     authenticator_enabled: !!toggleBtn && toggleBtn.getAttribute('aria-checked') === 'true',
                     has_prompt: isVisible(prompt),
                     has_recovery_codes: bodyText.includes('recovery codes') || bodyText.includes('backup codes'),
@@ -482,24 +498,18 @@ class ChatGptTwoFactorTool:
         """基于页面快照判断 2FA 是否已完成绑定。"""
 
         current_url = str(snapshot.get("current_url") or "").strip().lower()
-        otp_input_visible = bool(snapshot.get("otp_input_visible"))
-        verify_button_visible = bool(snapshot.get("verify_button_visible"))
         authenticator_enabled = bool(snapshot.get("authenticator_enabled"))
         has_prompt = bool(snapshot.get("has_prompt"))
         has_recovery_codes = bool(snapshot.get("has_recovery_codes"))
+        setup_panel_visible = bool(snapshot.get("setup_panel_visible"))
 
         if has_recovery_codes:
             return True
-        if has_prompt and not otp_input_visible:
+        if authenticator_enabled and not setup_panel_visible:
             return True
-        if authenticator_enabled and not otp_input_visible and not verify_button_visible:
+        if has_prompt and not setup_panel_visible:
             return True
-        return (
-            not otp_input_visible
-            and not verify_button_visible
-            and bool(current_url)
-            and current_url != self._SECURITY_URL.lower()
-        )
+        return bool(current_url) and current_url != self._SECURITY_URL.lower() and not setup_panel_visible
 
     async def _get_current_url(self, page: Any) -> str:
         """读取当前页面 URL。"""

@@ -84,17 +84,23 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
                     "current_url": "https://chatgpt.com/#settings/Security",
                     "otp_input_visible": True,
                     "verify_button_visible": True,
+                    "copy_code_visible": True,
+                    "trouble_scanning_visible": True,
+                    "setup_panel_visible": True,
                     "authenticator_enabled": True,
                     "has_prompt": False,
                     "has_recovery_codes": False,
                     "error_text": "",
                 },
                 {
-                    "current_url": "https://chatgpt.com/",
+                    "current_url": "https://chatgpt.com/#settings/Security",
                     "otp_input_visible": False,
                     "verify_button_visible": False,
+                    "copy_code_visible": False,
+                    "trouble_scanning_visible": False,
+                    "setup_panel_visible": False,
                     "authenticator_enabled": True,
-                    "has_prompt": True,
+                    "has_prompt": False,
                     "has_recovery_codes": False,
                     "error_text": "",
                 },
@@ -105,7 +111,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
             state = await tool._wait_for_post_verify_state(page)
 
         self.assertEqual("done", state["state"])
-        self.assertEqual("https://chatgpt.com/", state["current_url"])
+        self.assertEqual("https://chatgpt.com/#settings/Security", state["current_url"])
 
     async def test_wait_for_post_verify_state_should_surface_error(self) -> None:
         tool = ChatGptTwoFactorTool()
@@ -115,6 +121,9 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
                     "current_url": "https://chatgpt.com/#settings/Security",
                     "otp_input_visible": True,
                     "verify_button_visible": True,
+                    "copy_code_visible": True,
+                    "trouble_scanning_visible": True,
+                    "setup_panel_visible": True,
                     "authenticator_enabled": True,
                     "has_prompt": False,
                     "has_recovery_codes": False,
@@ -134,6 +143,8 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
             verify_state={
                 "state": "timeout",
                 "current_url": "https://chatgpt.com/#settings/Security",
+                "authenticator_enabled": True,
+                "setup_panel_visible": True,
             }
         )
         page = _FakePage()
@@ -143,13 +154,14 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual("verify_transition", result.step)
-        self.assertIn("当前URL=https://chatgpt.com/#settings/Security", result.reason or "")
+        self.assertIn("开关已开启=是", result.reason or "")
+        self.assertIn("验证面板仍可见=是", result.reason or "")
 
     async def test_setup_authenticator_should_return_secret_only_after_verify_success(self) -> None:
         tool = _DeterministicTwoFactorTool(
             verify_state={
                 "state": "done",
-                "current_url": "https://chatgpt.com/",
+                "current_url": "https://chatgpt.com/#settings/Security",
             }
         )
         page = _FakePage()
