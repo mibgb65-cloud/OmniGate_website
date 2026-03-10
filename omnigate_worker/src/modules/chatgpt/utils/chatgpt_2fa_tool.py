@@ -46,6 +46,10 @@ class ChatGptTwoFactorTool:
     _SECURITY_URL = "https://chatgpt.com/#settings/Security"
     _TROUBLE_SCANNING_POLL_LIMIT = 10
     _TROUBLE_SCANNING_POLL_INTERVAL_SECONDS = 1.0
+    _VERIFY_BUTTON_WAIT_SECONDS = 5.0
+    _VERIFY_BUTTON_POLL_INTERVAL_SECONDS = 0.25
+    _POST_VERIFY_TIMEOUT_SECONDS = 20.0
+    _POST_VERIFY_POLL_INTERVAL_SECONDS = 0.5
 
     async def setup_authenticator(self, page: Any) -> ChatGptTwoFactorSetupResult:
         """在已登录的 ChatGPT 页面上完成 2FA 绑定，成功时返回 TOTP 密钥。"""
@@ -146,8 +150,44 @@ class ChatGptTwoFactorTool:
                 reason="未找到 Verify 按钮或按钮被禁用",
             )
 
-        await asyncio.sleep(3.0)
-        self._log_flow(logging.INFO, "2FA 绑定完成", stage="流程完成")
+        verify_state = await self._wait_for_post_verify_state(page)
+        if verify_state["state"] == "error":
+            reason = str(verify_state.get("reason") or "2FA 验证失败")
+            self._log_flow(
+                logging.WARNING,
+                "2FA 验证失败",
+                stage="验证码提交",
+                extra={
+                    "原因": reason,
+                    "当前URL": verify_state.get("current_url"),
+                },
+            )
+            return ChatGptTwoFactorSetupResult(
+                ok=False,
+                step="verify",
+                reason=reason,
+            )
+
+        if verify_state["state"] != "done":
+            current_url = str(verify_state.get("current_url") or "").strip() or "未知"
+            self._log_flow(
+                logging.WARNING,
+                "等待 2FA 绑定完成超时",
+                stage="验证码提交",
+                extra={"当前URL": current_url},
+            )
+            return ChatGptTwoFactorSetupResult(
+                ok=False,
+                step="verify_transition",
+                reason=f"点击 Verify 后未确认到绑定完成，当前URL={current_url}",
+            )
+
+        self._log_flow(
+            logging.INFO,
+            "2FA 绑定完成",
+            stage="流程完成",
+            extra={"最终URL": verify_state.get("current_url")},
+        )
         return ChatGptTwoFactorSetupResult(
             ok=True,
             step="done",
@@ -263,21 +303,211 @@ class ChatGptTwoFactorTool:
         """提交 2FA 验证码。"""
 
         self._log_flow(logging.INFO, "提交 2FA 验证码", stage="验证码提交")
-        return bool(
-            await page.evaluate(
-                """
-                (() => {
-                    const btns = Array.from(document.querySelectorAll('button'));
-                    const verifyBtn = btns.find(b => (b.innerText || '').trim() === 'Verify');
-                    if (verifyBtn && !verifyBtn.disabled) {
+        deadline = asyncio.get_running_loop().time() + self._VERIFY_BUTTON_WAIT_SECONDS
+        while asyncio.get_running_loop().time() < deadline:
+            clicked = bool(
+                await page.evaluate(
+                    """
+                    (() => {
+                        const isVisible = el => {
+                            if (!el) {
+                                return false;
+                            }
+                            const style = window.getComputedStyle(el);
+                            if (style.display === 'none' || style.visibility === 'hidden') {
+                                return false;
+                            }
+                            const rect = el.getBoundingClientRect();
+                            return rect.width > 0 && rect.height > 0;
+                        };
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const verifyBtn = btns.find(
+                            b => (b.innerText || '').trim() === 'Verify' && isVisible(b)
+                        );
+                        if (!verifyBtn) {
+                            return false;
+                        }
+                        const disabled = verifyBtn.disabled || verifyBtn.getAttribute('aria-disabled') === 'true';
+                        if (disabled) {
+                            return false;
+                        }
+                        verifyBtn.scrollIntoView({ block: 'center', inline: 'center' });
+                        for (const eventName of ['mousedown', 'mouseup', 'click']) {
+                            verifyBtn.dispatchEvent(
+                                new MouseEvent(eventName, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window,
+                                })
+                            );
+                        }
                         verifyBtn.click();
                         return true;
-                    }
-                    return false;
-                })();
-                """
+                    })();
+                    """
+                )
             )
+            if clicked:
+                return True
+            await asyncio.sleep(self._VERIFY_BUTTON_POLL_INTERVAL_SECONDS)
+        return False
+
+    async def _wait_for_post_verify_state(self, page: Any) -> dict[str, Any]:
+        """等待 Verify 提交后的页面收口，确认成功、错误或超时。"""
+
+        self._log_flow(
+            logging.INFO,
+            "等待 2FA 验证后的页面收口",
+            stage="验证码提交",
+            extra={"超时秒": f"{self._POST_VERIFY_TIMEOUT_SECONDS:.0f}"},
         )
+        deadline = asyncio.get_running_loop().time() + self._POST_VERIFY_TIMEOUT_SECONDS
+        last_state: dict[str, Any] = {"state": "timeout", "current_url": await self._get_current_url(page)}
+
+        while asyncio.get_running_loop().time() < deadline:
+            snapshot = await self._collect_post_verify_state(page)
+            last_state = snapshot
+            if self._is_post_verify_success(snapshot):
+                return {
+                    "state": "done",
+                    "current_url": snapshot.get("current_url"),
+                }
+
+            reason = str(snapshot.get("error_text") or "").strip()
+            if reason:
+                return {
+                    "state": "error",
+                    "reason": reason,
+                    "current_url": snapshot.get("current_url"),
+                }
+
+            await asyncio.sleep(self._POST_VERIFY_POLL_INTERVAL_SECONDS)
+
+        return {
+            "state": "timeout",
+            "current_url": last_state.get("current_url") or await self._get_current_url(page),
+        }
+
+    async def _collect_post_verify_state(self, page: Any) -> dict[str, Any]:
+        """采集 Verify 提交后的页面状态，用于判断是否已完成绑定。"""
+
+        raw_state = await page.evaluate(
+            """
+            (() => {
+                const marker = '__OMNIGATE_2FA_POST_VERIFY_STATE__';
+                const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+                const isVisible = el => {
+                    if (!el) {
+                        return false;
+                    }
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden') {
+                        return false;
+                    }
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                };
+
+                const divs = Array.from(document.querySelectorAll('div'));
+                const authSection = divs.find(d =>
+                    (d.textContent || '').includes('Authenticator app') &&
+                    (d.textContent || '').includes('Use one-time codes')
+                );
+                const toggleBtn = authSection ? authSection.querySelector('button[role="switch"]') : null;
+
+                const otpInput = document.querySelector('input#totp_otp');
+                const prompt = document.querySelector('textarea#prompt-textarea, [id="prompt-textarea"]');
+                const btns = Array.from(document.querySelectorAll('button'));
+                const verifyBtn = btns.find(
+                    b => (b.innerText || '').trim() === 'Verify' && isVisible(b)
+                );
+
+                const errorSelectors = [
+                    '[role="alert"]',
+                    '[data-error]',
+                    '.error-message',
+                    '.alert-error',
+                    '[aria-live="assertive"]',
+                    '[aria-invalid="true"]',
+                ];
+
+                let errorText = '';
+                for (const selector of errorSelectors) {
+                    const el = document.querySelector(selector);
+                    if (!isVisible(el)) {
+                        continue;
+                    }
+                    const text = normalize(el.innerText || el.textContent);
+                    if (text) {
+                        errorText = text;
+                        break;
+                    }
+                }
+
+                const bodyText = normalize(document.body ? document.body.innerText : '').toLowerCase();
+                if (!errorText) {
+                    const knownErrorTexts = [
+                        'invalid code',
+                        'incorrect code',
+                        'wrong code',
+                        'expired code',
+                        'code expired',
+                        'something went wrong',
+                        'too many attempts',
+                    ];
+                    const matched = knownErrorTexts.find(token => bodyText.includes(token));
+                    if (matched) {
+                        errorText = matched;
+                    }
+                }
+
+                return {
+                    marker,
+                    current_url: window.location.href,
+                    otp_input_visible: isVisible(otpInput),
+                    verify_button_visible: isVisible(verifyBtn),
+                    authenticator_enabled: !!toggleBtn && toggleBtn.getAttribute('aria-checked') === 'true',
+                    has_prompt: isVisible(prompt),
+                    has_recovery_codes: bodyText.includes('recovery codes') || bodyText.includes('backup codes'),
+                    error_text: errorText,
+                };
+            })();
+            """
+        )
+        if not isinstance(raw_state, dict):
+            return {"current_url": await self._get_current_url(page)}
+        return raw_state
+
+    def _is_post_verify_success(self, snapshot: dict[str, Any]) -> bool:
+        """基于页面快照判断 2FA 是否已完成绑定。"""
+
+        current_url = str(snapshot.get("current_url") or "").strip().lower()
+        otp_input_visible = bool(snapshot.get("otp_input_visible"))
+        verify_button_visible = bool(snapshot.get("verify_button_visible"))
+        authenticator_enabled = bool(snapshot.get("authenticator_enabled"))
+        has_prompt = bool(snapshot.get("has_prompt"))
+        has_recovery_codes = bool(snapshot.get("has_recovery_codes"))
+
+        if has_recovery_codes:
+            return True
+        if has_prompt and not otp_input_visible:
+            return True
+        if authenticator_enabled and not otp_input_visible and not verify_button_visible:
+            return True
+        return (
+            not otp_input_visible
+            and not verify_button_visible
+            and bool(current_url)
+            and current_url != self._SECURITY_URL.lower()
+        )
+
+    async def _get_current_url(self, page: Any) -> str:
+        """读取当前页面 URL。"""
+
+        try:
+            return str(await page.evaluate("window.location.href") or "")
+        except Exception:  # noqa: BLE001
+            return ""
 
     @staticmethod
     def _mask_secret(secret_key: str) -> str:
