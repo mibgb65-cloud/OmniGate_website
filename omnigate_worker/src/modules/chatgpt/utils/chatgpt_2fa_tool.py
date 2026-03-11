@@ -117,6 +117,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="generate_totp",
                 reason=f"验证码生成失败: {exc}",
+                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
             )
         self._log_flow(
             logging.INFO,
@@ -132,6 +133,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="input_code",
                 reason="未找到 id 为 totp_otp 的输入框",
+                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
             )
 
         self._log_flow(logging.INFO, "开始填写 TOTP 验证码", stage="验证码填写")
@@ -148,6 +150,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="verify",
                 reason="未找到 Verify 按钮或按钮被禁用",
+                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
             )
 
         verify_state = await self._wait_for_post_verify_state(page)
@@ -166,18 +169,21 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="verify",
                 reason=reason,
+                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
             )
 
         if verify_state["state"] != "done":
             current_url = str(verify_state.get("current_url") or "").strip() or "未知"
             authenticator_enabled = "是" if verify_state.get("authenticator_enabled") else "否"
             setup_panel_visible = "是" if verify_state.get("setup_panel_visible") else "否"
+            success_toast_visible = "是" if verify_state.get("success_toast_visible") else "否"
             self._log_flow(
                 logging.WARNING,
                 "等待 2FA 绑定完成超时",
                 stage="验证码提交",
                 extra={
                     "当前URL": current_url,
+                    "成功提示已出现": success_toast_visible,
                     "开关已开启": authenticator_enabled,
                     "验证面板仍可见": setup_panel_visible,
                 },
@@ -187,8 +193,10 @@ class ChatGptTwoFactorTool:
                 step="verify_transition",
                 reason=(
                     "点击 Verify 后未确认到绑定完成，"
+                    f"成功提示已出现={success_toast_visible}，"
                     f"开关已开启={authenticator_enabled}，验证面板仍可见={setup_panel_visible}"
                 ),
+                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥，供外层兜底逻辑使用
             )
 
         self._log_flow(
@@ -434,6 +442,15 @@ class ChatGptTwoFactorTool:
                     isVisible(copyCodeDiv) ||
                     isVisible(troubleScanningBtn)
                 );
+                const successToastVisible = Array.from(
+                    document.querySelectorAll('div, span, p, [role="status"], [aria-live]')
+                ).some(el => {
+                    if (!isVisible(el)) {
+                        return false;
+                    }
+                    const text = normalize(el.innerText || el.textContent);
+                    return text === 'Authenticator app enabled';
+                });
 
                 const errorSelectors = [
                     '[role="alert"]',
@@ -481,6 +498,7 @@ class ChatGptTwoFactorTool:
                     verify_button_visible: isVisible(verifyBtn),
                     copy_code_visible: isVisible(copyCodeDiv),
                     trouble_scanning_visible: isVisible(troubleScanningBtn),
+                    success_toast_visible: successToastVisible,
                     setup_panel_visible: setupPanelVisible,
                     authenticator_enabled: !!toggleBtn && toggleBtn.getAttribute('aria-checked') === 'true',
                     has_prompt: isVisible(prompt),
@@ -502,7 +520,10 @@ class ChatGptTwoFactorTool:
         has_prompt = bool(snapshot.get("has_prompt"))
         has_recovery_codes = bool(snapshot.get("has_recovery_codes"))
         setup_panel_visible = bool(snapshot.get("setup_panel_visible"))
+        success_toast_visible = bool(snapshot.get("success_toast_visible"))
 
+        if success_toast_visible:
+            return True
         if has_recovery_codes:
             return True
         if authenticator_enabled and not setup_panel_visible:

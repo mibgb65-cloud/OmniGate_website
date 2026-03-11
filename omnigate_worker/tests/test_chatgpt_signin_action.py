@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import unittest
 from typing import Any
+from unittest.mock import patch
 
 from src.modules.chatgpt.actions.chatgpt_signin_action import ChatGPTLoginAction
+
+
+async def _noop_sleep(_: float) -> None:
+    return None
 
 
 class _FakePage:
@@ -14,14 +19,17 @@ class _FakePage:
         has_login_button: bool = False,
         has_email_input: bool = False,
         has_password_input: bool = False,
+        password_input_after_calls: int | None = None,
         current_url: str = "https://chatgpt.com/",
     ) -> None:
         self.has_prompt = has_prompt
         self.has_login_button = has_login_button
         self.has_email_input = has_email_input
         self.has_password_input = has_password_input
+        self.password_input_after_calls = password_input_after_calls
         self.current_url = current_url
         self.opened_urls: list[str] = []
+        self.password_select_calls = 0
 
     async def get(self, url: str) -> "_FakePage":
         self.opened_urls.append(url)
@@ -38,8 +46,12 @@ class _FakePage:
             return "prompt-textarea"
         if 'input[name="username"]' in selector and self.has_email_input:
             return "email-input"
-        if 'input[type="password"]' in selector and self.has_password_input:
-            return "password-input"
+        if 'input[type="password"]' in selector:
+            self.password_select_calls += 1
+            if self.password_input_after_calls is not None and self.password_select_calls >= self.password_input_after_calls:
+                return "password-input"
+            if self.has_password_input:
+                return "password-input"
         if 'data-testid="login-button"' in selector and self.has_login_button:
             return "login-button"
         return None
@@ -82,3 +94,13 @@ class TestChatGptSigninAction(unittest.IsolatedAsyncioTestCase):
         state = await action._wait_for_post_mfa_state(page, timeout_seconds=0.1)
 
         self.assertEqual("workspace", state["state"])
+
+    async def test_should_retry_password_input_until_it_appears(self) -> None:
+        action = ChatGPTLoginAction()
+        page = _FakePage(password_input_after_calls=3)
+
+        with patch("src.modules.chatgpt.actions.chatgpt_signin_action.asyncio.sleep", new=_noop_sleep):
+            password_input = await action._wait_for_password_input(page, timeout_seconds=1.0)
+
+        self.assertEqual("password-input", password_input)
+        self.assertEqual(3, page.password_select_calls)

@@ -36,6 +36,8 @@ class OpenAISignupService:
     """处理 ChatGPT 账号登录/注册，并在注册时自动从 CloudMail 拉取验证码。"""
 
     _LOG_PREFIX = "[ChatGPT注册]"
+    _SELECT_QUERY_TIMEOUT_SECONDS = 2.0
+    _POLL_INTERVAL_SECONDS = 0.5
 
     def __init__(
         self,
@@ -61,6 +63,11 @@ class OpenAISignupService:
             else settings.CHATGPT_HOME_OPEN_TIMEOUT_SECONDS
         )
         self._chatgpt_home_open_timeout_seconds = max(1.0, float(resolved_timeout))
+        self._form_element_timeout_seconds = max(20.0, float(settings.CHATGPT_LOGIN_ELEMENT_TIMEOUT_SECONDS))
+        self._form_transition_timeout_seconds = max(
+            self._form_element_timeout_seconds,
+            float(settings.CHATGPT_LOGIN_TRANSITION_TIMEOUT_SECONDS),
+        )
 
     async def process_account(
         self,
@@ -115,17 +122,23 @@ class OpenAISignupService:
             await asyncio.sleep(4)
 
             self._log_flow(logging.INFO, "定位登录入口", stage="入口定位", email=email)
-            login_btn = await page.find("Log in", timeout=5) or await page.find("登录", timeout=5)
-            if not login_btn:
-                login_btn = await page.select('[data-testid="login-button"]', timeout=5)
+            login_btn = await self._wait_for_login_button(
+                page,
+                timeout_seconds=min(20.0, self._form_element_timeout_seconds),
+                email=email,
+            )
             if login_btn:
                 await login_btn.click()
             await asyncio.sleep(2)
 
             self._log_flow(logging.INFO, "定位邮箱输入框", stage="邮箱输入", email=email)
-            email_input = await page.select(
+            email_input = await self._wait_for_select(
+                page,
                 'input[name="username"], input[name="email"], input[type="email"]',
-                timeout=10,
+                timeout_seconds=self._form_transition_timeout_seconds,
+                stage="邮箱输入",
+                description="邮箱输入框",
+                email=email,
             )
             if not email_input:
                 raise TimeoutError("Email input field not found")
@@ -137,15 +150,29 @@ class OpenAISignupService:
             await asyncio.sleep(0.5)
 
             self._log_flow(logging.INFO, "提交邮箱", stage="邮箱提交", email=email)
-            continue_btn = await page.select('button[type="submit"], button[name="action"]', timeout=5)
+            continue_btn = await self._wait_for_select(
+                page,
+                'button[type="submit"], button[name="action"]',
+                timeout_seconds=10.0,
+                stage="邮箱提交",
+                description="继续按钮",
+                email=email,
+                log_on_timeout=False,
+            )
             if continue_btn:
                 await continue_btn.click()
+            else:
+                await email_input.send_keys("\n")
 
             self._log_flow(logging.INFO, "等待密码输入页", stage="分支识别", email=email)
             try:
-                password_element = await page.select(
+                password_element = await self._wait_for_select(
+                    page,
                     'input[type="password"], input[name="password"]',
-                    timeout=20,
+                    timeout_seconds=self._form_transition_timeout_seconds,
+                    stage="分支识别",
+                    description="密码输入框",
+                    email=email,
                 )
                 if not password_element:
                     raise TimeoutError("Password element not found")
@@ -282,7 +309,14 @@ class OpenAISignupService:
 
         self._log_flow(logging.INFO, "等待验证码输入框", stage="验证码填写", email=email)
         try:
-            otp_input = await page.select('input[inputmode="numeric"], input[name="code"], .code-input', timeout=20)
+            otp_input = await self._wait_for_select(
+                page,
+                'input[inputmode="numeric"], input[name="code"], .code-input',
+                timeout_seconds=self._form_transition_timeout_seconds,
+                stage="验证码填写",
+                description="验证码输入框",
+                email=email,
+            )
             if not otp_input:
                 raise TimeoutError("OTP input field not found")
 
@@ -292,7 +326,15 @@ class OpenAISignupService:
 
             await asyncio.sleep(1.5)
             try:
-                otp_continue_btn = await page.select('button[type="submit"]', timeout=5)
+                otp_continue_btn = await self._wait_for_select(
+                    page,
+                    'button[type="submit"]',
+                    timeout_seconds=10.0,
+                    stage="验证码填写",
+                    description="验证码继续按钮",
+                    email=email,
+                    log_on_timeout=False,
+                )
                 if otp_continue_btn:
                     await otp_continue_btn.click()
                 else:
@@ -326,9 +368,13 @@ class OpenAISignupService:
 
         self._log_flow(logging.INFO, "验证码已提交，等待资料页加载", stage="资料填写", email=email)
         try:
-            name_input = await page.select(
+            name_input = await self._wait_for_select(
+                page,
                 'input[name="fullname"], input[name="name"], input[name="first-name"]',
-                timeout=20,
+                timeout_seconds=self._form_transition_timeout_seconds,
+                stage="资料填写",
+                description="姓名输入框",
+                email=email,
             )
             if not name_input:
                 raise TimeoutError("Name input field not found")
@@ -349,7 +395,15 @@ class OpenAISignupService:
                 extra={"生日": f"{month_text}/{day_text}/{year_text}"},
             )
 
-            month_input = await page.select('div[data-type="month"]', timeout=5)
+            month_input = await self._wait_for_select(
+                page,
+                'div[data-type="month"]',
+                timeout_seconds=10.0,
+                stage="资料填写",
+                description="月份输入框",
+                email=email,
+                log_on_timeout=False,
+            )
             if month_input:
                 await month_input.click()
                 await asyncio.sleep(0.5)
@@ -359,7 +413,15 @@ class OpenAISignupService:
                     await month_input.send_keys(char)
                     await asyncio.sleep(random.uniform(0.05, 0.15))
 
-            day_input = await page.select('div[data-type="day"]', timeout=5)
+            day_input = await self._wait_for_select(
+                page,
+                'div[data-type="day"]',
+                timeout_seconds=10.0,
+                stage="资料填写",
+                description="日期输入框",
+                email=email,
+                log_on_timeout=False,
+            )
             if day_input:
                 await day_input.click()
                 await asyncio.sleep(0.5)
@@ -369,7 +431,15 @@ class OpenAISignupService:
                     await day_input.send_keys(char)
                     await asyncio.sleep(random.uniform(0.05, 0.15))
 
-            year_input = await page.select('div[data-type="year"]', timeout=5)
+            year_input = await self._wait_for_select(
+                page,
+                'div[data-type="year"]',
+                timeout_seconds=10.0,
+                stage="资料填写",
+                description="年份输入框",
+                email=email,
+                log_on_timeout=False,
+            )
             if year_input:
                 await year_input.click()
                 await asyncio.sleep(0.5)
@@ -380,7 +450,15 @@ class OpenAISignupService:
                     await asyncio.sleep(random.uniform(0.05, 0.15))
 
             await asyncio.sleep(1.5)
-            agree_btn = await page.select('button[type="submit"]', timeout=5)
+            agree_btn = await self._wait_for_select(
+                page,
+                'button[type="submit"]',
+                timeout_seconds=10.0,
+                stage="资料填写",
+                description="资料提交按钮",
+                email=email,
+                log_on_timeout=False,
+            )
             if agree_btn:
                 await agree_btn.click()
 
@@ -569,25 +647,78 @@ class OpenAISignupService:
         )
 
     async def _setup_two_factor(self, page: Any, email: str) -> str:
-        """为新注册账号开启 2FA，并返回生成的 TOTP 密钥。"""
+        """为新注册账号开启 2FA，并返回生成的 TOTP 密钥。增加兜底状态校验。"""
 
+        # 1. 执行 2FA 工具类流程
         result = await self._two_factor_action.setup_2fa(page)
+
+        # 即使流程报错，我们也要尝试提取 secret_key
+        totp_secret = str(result.get("secret_key") or "").strip()
+
+        # 2. 如果工具类报告失败，触发兜底校验逻辑
         if not result.get("ok"):
+            if totp_secret:
+                self._log_flow(
+                    logging.INFO,
+                    "2FA 流程报告失败，正在执行 DOM 兜底状态校验...",
+                    stage="2FA配置",
+                    email=email
+                )
+
+                # 检查页面上 Authenticator app 的开关是否处于打开状态
+                is_actually_enabled = await self._verify_2fa_enabled_in_dom(page)
+                if is_actually_enabled:
+                    self._log_flow(
+                        logging.INFO,
+                        "兜底校验通过：检测到 2FA 开关已处于打开状态，强制放行",
+                        stage="2FA配置",
+                        email=email
+                    )
+                    return totp_secret
+
+            # 如果没有 secret，或者开关确实没打开，则抛出原本的错误
             step = str(result.get("step") or "unknown")
             reason = str(result.get("reason") or "未知错误")
             raise RuntimeError(f"{step}: {reason}")
 
-        totp_secret = str(result.get("secret_key") or "").strip()
         if not totp_secret:
             raise RuntimeError("2FA 返回的 secret_key 为空")
 
         self._log_flow(
             logging.INFO,
-            "2FA 配置成功",
+            "2FA 配置正常完成",
             stage="2FA配置",
             email=email,
         )
         return totp_secret
+
+    async def _verify_2fa_enabled_in_dom(self, page: Any) -> bool:
+        """
+        兜底探针：检查当前页面是否处于 Security 设置页，且 Authenticator app 开关已打开。
+        """
+        try:
+            # 留出一点时间让页面动画或跳转完成
+            await asyncio.sleep(2)
+
+            js_check = """
+            (() => {
+                // 1. 确认我们在 Security 页面且包含 MFA 相关的文本
+                const bodyText = document.body.innerText || "";
+                if (!bodyText.includes('Authenticator app') && !bodyText.includes('Multi-factor authentication')) {
+                    return false;
+                }
+
+                // 2. 寻找处于激活状态的开关。
+                const activeSwitches = document.querySelectorAll('button[role="switch"][aria-checked="true"], input[type="checkbox"]:checked');
+                
+                // 只要页面上有激活的开关，且包含 2FA 文本，大概率就是成功了
+                return activeSwitches.length > 0;
+            })();
+            """
+            return await page.evaluate(js_check)
+        except Exception as exc:
+            logger.debug(f"2FA 兜底校验发生异常: {exc}")
+            return False
 
     async def _try_get_session_content(self, page: Any, email: str) -> str | None:
         """尽量抓取当前账号的 ChatGPT 完整 session 页面内容。"""
@@ -637,6 +768,67 @@ class OpenAISignupService:
 
         self._log_flow(logging.INFO, "Session 抓取成功", stage="Session抓取", email=email)
         return session_content
+
+    async def _wait_for_login_button(self, page: Any, *, timeout_seconds: float, email: str | None = None) -> Any | None:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                login_btn = await page.find("Log in", timeout=1) or await page.find("登录", timeout=1)
+                if login_btn:
+                    return login_btn
+            except Exception:  # noqa: BLE001
+                pass
+
+            login_btn = await self._try_select(page, '[data-testid="login-button"]')
+            if login_btn:
+                return login_btn
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+
+        self._log_flow(
+            logging.WARNING,
+            "等待登录入口超时",
+            stage="入口定位",
+            email=email,
+            extra={"超时秒数": f"{timeout_seconds:.0f}"},
+        )
+        return None
+
+    async def _wait_for_select(
+        self,
+        page: Any,
+        selector: str,
+        *,
+        timeout_seconds: float,
+        stage: str,
+        description: str,
+        email: str | None = None,
+        log_on_timeout: bool = True,
+    ) -> Any | None:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while asyncio.get_running_loop().time() < deadline:
+            element = await self._try_select(page, selector)
+            if element:
+                return element
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+
+        if log_on_timeout:
+            self._log_flow(
+                logging.WARNING,
+                "等待页面元素超时",
+                stage=stage,
+                email=email,
+                extra={
+                    "元素": description,
+                    "超时秒数": f"{timeout_seconds:.0f}",
+                },
+            )
+        return None
+
+    async def _try_select(self, page: Any, selector: str, *, timeout_seconds: float | None = None) -> Any | None:
+        try:
+            return await page.select(selector, timeout=timeout_seconds or self._SELECT_QUERY_TIMEOUT_SECONDS)
+        except Exception:  # noqa: BLE001
+            return None
 
     async def _reset_browser_state(self, browser: Any) -> None:
         """在同一个浏览器实例里清理 cookie 和站点存储，避免上一轮登录态干扰下一轮。"""

@@ -86,6 +86,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
                     "verify_button_visible": True,
                     "copy_code_visible": True,
                     "trouble_scanning_visible": True,
+                    "success_toast_visible": False,
                     "setup_panel_visible": True,
                     "authenticator_enabled": True,
                     "has_prompt": False,
@@ -98,6 +99,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
                     "verify_button_visible": False,
                     "copy_code_visible": False,
                     "trouble_scanning_visible": False,
+                    "success_toast_visible": False,
                     "setup_panel_visible": False,
                     "authenticator_enabled": True,
                     "has_prompt": False,
@@ -113,6 +115,32 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("done", state["state"])
         self.assertEqual("https://chatgpt.com/#settings/Security", state["current_url"])
 
+    async def test_wait_for_post_verify_state_should_detect_success_toast(self) -> None:
+        tool = ChatGptTwoFactorTool()
+        page = _FakePage(
+            snapshots=[
+                {
+                    "current_url": "https://chatgpt.com/#settings/Security",
+                    "otp_input_visible": True,
+                    "verify_button_visible": True,
+                    "copy_code_visible": True,
+                    "trouble_scanning_visible": True,
+                    "success_toast_visible": True,
+                    "setup_panel_visible": True,
+                    "authenticator_enabled": True,
+                    "has_prompt": False,
+                    "has_recovery_codes": False,
+                    "error_text": "",
+                }
+            ]
+        )
+
+        with patch("src.modules.chatgpt.utils.chatgpt_2fa_tool.asyncio.sleep", new=_noop_sleep):
+            state = await tool._wait_for_post_verify_state(page)
+
+        self.assertEqual("done", state["state"])
+        self.assertTrue(state["success_toast_visible"])
+
     async def test_wait_for_post_verify_state_should_surface_error(self) -> None:
         tool = ChatGptTwoFactorTool()
         page = _FakePage(
@@ -123,6 +151,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
                     "verify_button_visible": True,
                     "copy_code_visible": True,
                     "trouble_scanning_visible": True,
+                    "success_toast_visible": False,
                     "setup_panel_visible": True,
                     "authenticator_enabled": True,
                     "has_prompt": False,
@@ -143,6 +172,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
             verify_state={
                 "state": "timeout",
                 "current_url": "https://chatgpt.com/#settings/Security",
+                "success_toast_visible": False,
                 "authenticator_enabled": True,
                 "setup_panel_visible": True,
             }
@@ -154,6 +184,7 @@ class TestChatGptTwoFactorTool(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual("verify_transition", result.step)
+        self.assertIn("成功提示已出现=否", result.reason or "")
         self.assertIn("开关已开启=是", result.reason or "")
         self.assertIn("验证面板仍可见=是", result.reason or "")
 

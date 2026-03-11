@@ -22,6 +22,9 @@ class ChatGPTLoginAction:
     _MFA_SELECTOR = 'input[inputmode="numeric"], input[name="code"], input[id="mfa-code"]'
     _PROMPT_SELECTOR = 'textarea#prompt-textarea, [id="prompt-textarea"]'
     _SUBMIT_SELECTOR = 'button[type="submit"], button[name="action"]'
+    _SELECT_QUERY_TIMEOUT_SECONDS = 2.0
+    _FINAL_SELECTOR_TIMEOUT_SECONDS = 5.0
+    _POLL_INTERVAL_SECONDS = 0.5
 
     def __init__(
         self,
@@ -223,7 +226,7 @@ class ChatGPTLoginAction:
             if prompt:
                 return {"state": "prompt", "element": prompt}
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
         return {"state": "unknown"}
 
     async def _wait_for_auth_step(self, page: Any, *, timeout_seconds: float) -> dict[str, Any] | None:
@@ -232,7 +235,23 @@ class ChatGPTLoginAction:
             auth_step = await self._query_auth_step(page)
             if auth_step is not None:
                 return auth_step
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+
+        email_input = await self._try_select(
+            page,
+            self._EMAIL_SELECTOR,
+            timeout_seconds=min(self._FINAL_SELECTOR_TIMEOUT_SECONDS, timeout_seconds),
+        )
+        if email_input:
+            return {"state": "email", "element": email_input}
+
+        password_input = await self._try_select(
+            page,
+            self._PASSWORD_SELECTOR,
+            timeout_seconds=min(self._FINAL_SELECTOR_TIMEOUT_SECONDS, timeout_seconds),
+        )
+        if password_input:
+            return {"state": "password", "element": password_input}
         return None
 
     async def _wait_for_login_button(self, page: Any, *, timeout_seconds: float) -> Any | None:
@@ -241,17 +260,15 @@ class ChatGPTLoginAction:
             login_button = await self._query_login_button(page)
             if login_button:
                 return login_button
-            await asyncio.sleep(0.5)
-        return None
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+        return await self._try_select(
+            page,
+            '[data-testid="login-button"]',
+            timeout_seconds=min(self._FINAL_SELECTOR_TIMEOUT_SECONDS, timeout_seconds),
+        )
 
     async def _wait_for_password_input(self, page: Any, *, timeout_seconds: float) -> Any | None:
-        deadline = asyncio.get_running_loop().time() + timeout_seconds
-        while asyncio.get_running_loop().time() < deadline:
-            password_input = await self._try_select(page, self._PASSWORD_SELECTOR)
-            if password_input:
-                return password_input
-            await asyncio.sleep(0.5)
-        return None
+        return await self._wait_for_selector(page, self._PASSWORD_SELECTOR, timeout_seconds=timeout_seconds)
 
     async def _wait_for_mfa_input(self, page: Any, *, timeout_seconds: float) -> Any | None:
         deadline = asyncio.get_running_loop().time() + timeout_seconds
@@ -259,8 +276,12 @@ class ChatGPTLoginAction:
             mfa_input = await self._query_mfa_input(page)
             if mfa_input:
                 return mfa_input
-            await asyncio.sleep(0.5)
-        return None
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+        return await self._try_select(
+            page,
+            self._MFA_SELECTOR,
+            timeout_seconds=min(self._FINAL_SELECTOR_TIMEOUT_SECONDS, timeout_seconds),
+        )
 
     async def _wait_for_prompt_textarea(self, page: Any, *, timeout_seconds: float) -> Any | None:
         deadline = asyncio.get_running_loop().time() + timeout_seconds
@@ -268,7 +289,7 @@ class ChatGPTLoginAction:
             prompt = await self._query_logged_in_prompt(page)
             if prompt:
                 return prompt
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
         return None
 
     async def _wait_for_post_password_state(self, page: Any, *, timeout_seconds: float) -> dict[str, Any]:
@@ -290,7 +311,7 @@ class ChatGPTLoginAction:
             if error_msg != "未检测到明显错误提示":
                 return {"state": "error", "reason": error_msg}
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
         return {"state": "timeout"}
 
     async def _wait_for_post_mfa_state(self, page: Any, *, timeout_seconds: float) -> dict[str, Any]:
@@ -308,7 +329,7 @@ class ChatGPTLoginAction:
             if error_msg != "未检测到明显错误提示":
                 return {"state": "error", "reason": error_msg}
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
         return {"state": "timeout"}
 
     async def _query_auth_step(self, page: Any) -> dict[str, Any] | None:
@@ -338,6 +359,19 @@ class ChatGPTLoginAction:
 
     async def _query_prompt_textarea(self, page: Any) -> Any | None:
         return await self._try_select(page, self._PROMPT_SELECTOR)
+
+    async def _wait_for_selector(self, page: Any, selector: str, *, timeout_seconds: float) -> Any | None:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while asyncio.get_running_loop().time() < deadline:
+            element = await self._try_select(page, selector)
+            if element:
+                return element
+            await asyncio.sleep(self._POLL_INTERVAL_SECONDS)
+        return await self._try_select(
+            page,
+            selector,
+            timeout_seconds=min(self._FINAL_SELECTOR_TIMEOUT_SECONDS, timeout_seconds),
+        )
 
     async def _query_logged_in_prompt(self, page: Any) -> Any | None:
         prompt = await self._query_prompt_textarea(page)
@@ -450,9 +484,9 @@ class ChatGPTLoginAction:
         except Exception:  # noqa: BLE001
             return ""
 
-    async def _try_select(self, page: Any, selector: str) -> Any | None:
+    async def _try_select(self, page: Any, selector: str, *, timeout_seconds: float | None = None) -> Any | None:
         try:
-            return await page.select(selector, timeout=1)
+            return await page.select(selector, timeout=timeout_seconds or self._SELECT_QUERY_TIMEOUT_SECONDS)
         except Exception:  # noqa: BLE001
             return None
 
