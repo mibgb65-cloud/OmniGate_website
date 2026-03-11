@@ -121,27 +121,68 @@ class OpenAISignupService:
             )
             await asyncio.sleep(4)
 
-            self._log_flow(logging.INFO, "定位登录入口", stage="入口定位", email=email)
-            login_btn = await self._wait_for_login_button(
-                page,
-                timeout_seconds=min(20.0, self._form_element_timeout_seconds),
-                email=email,
-            )
-            if login_btn:
-                await login_btn.click()
-            await asyncio.sleep(2)
+            self._log_flow(logging.INFO, "定位登录入口并等待弹窗", stage="入口定位", email=email)
 
-            self._log_flow(logging.INFO, "定位邮箱输入框", stage="邮箱输入", email=email)
-            email_input = await self._wait_for_select(
-                page,
-                'input[name="username"], input[name="email"], input[type="email"]',
-                timeout_seconds=self._form_transition_timeout_seconds,
-                stage="邮箱输入",
-                description="邮箱输入框",
-                email=email,
-            )
+            email_input = None
+            # 弱网终极杀手锏：最多尝试 3 个波次的“点击 -> 检测弹窗”
+            for attempt in range(1, 4):
+                login_btn = await self._wait_for_login_button(
+                    page,
+                    timeout_seconds=min(10.0, self._form_element_timeout_seconds),
+                    email=email,
+                )
+
+                if login_btn:
+                    self._log_flow(logging.INFO, f"尝试点击登录按钮 (第 {attempt} 次)", stage="入口定位", email=email)
+                    try:
+                        # 尝试原生点击
+                        await login_btn.click()
+                    except Exception as e:
+                        logger.debug(f"标准点击失败，尝试 evaluate 强制点击: {e}")
+                        await page.evaluate("(btn) => btn.click()", login_btn)
+
+                # 点完之后，等弹窗出来。给 10 秒的时间让它弹
+                self._log_flow(logging.INFO, f"等待邮箱输入框渲染 (第 {attempt} 次检测)", stage="邮箱输入", email=email)
+                email_input = await self._wait_for_select(
+                    page,
+                    'input[name="username"], input[name="email"], input[type="email"]',
+                    timeout_seconds=10.0,
+                    stage="邮箱输入",
+                    description="邮箱输入框",
+                    email=email,
+                    log_on_timeout=False,  # 内部探测，没找到先别急着报警告
+                )
+
+                if email_input:
+                    self._log_flow(logging.INFO, "检测到邮箱输入框，登录弹窗已成功弹出！", stage="入口定位", email=email)
+                    break  # 弹出来了，打破循环继续往下走
+                else:
+                    self._log_flow(
+                        logging.WARNING,
+                        "未检测到邮箱输入框，怀疑弱网导致 JS 未加载完全或弹窗被卡住，准备重试...",
+                        stage="入口定位",
+                        email=email
+                    )
+                    # 强行休息 3 秒，等服务器的网络把 JS 包拉下来
+                    await asyncio.sleep(3)
+
+                    # 如果 3 次循环都跑完了还是没找到输入框，那就是真出问题了，走兜底截图
             if not email_input:
-                raise TimeoutError("Email input field not found")
+                try:
+                    current_url = await page.evaluate("window.location.href")
+                    await page.save_screenshot("debug_timeout_no_email_box.png")
+                    self._log_flow(
+                        logging.ERROR,
+                        "多次尝试点击登录按钮后，仍未弹出邮箱输入框",
+                        stage="邮箱输入",
+                        email=email,
+                        extra={"当前URL": current_url, "截图已保存": "debug_timeout_no_email_box.png"}
+                    )
+                except Exception as debug_exc:
+                    logger.warning(f"保存调试信息失败: {debug_exc}")
+
+                raise TimeoutError("Email input field not found after multiple click attempts")
+
 
             self._log_flow(logging.INFO, "输入注册邮箱", stage="邮箱输入", email=email)
             for char in email:
