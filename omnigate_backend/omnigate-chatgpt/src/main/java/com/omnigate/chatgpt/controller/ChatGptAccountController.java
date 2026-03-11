@@ -1,6 +1,7 @@
 package com.omnigate.chatgpt.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchSoldDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchStatusDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountCreateDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountPageQueryDTO;
@@ -122,6 +123,17 @@ public class ChatGptAccountController {
     @PatchMapping("/batch/status")
     public Result<Integer> batchUpdateAccountStatus(@RequestBody @Valid ChatGptAccountBatchStatusDTO batchStatusDTO) {
         return Result.success(chatGptAccountService.batchUpdateAccountStatus(batchStatusDTO));
+    }
+
+    /**
+     * 批量更新账号出售状态。
+     *
+     * @param batchSoldDTO 批量出售状态参数
+     * @return 更新成功数量
+     */
+    @PatchMapping("/batch/sold")
+    public Result<Integer> batchUpdateAccountSold(@RequestBody @Valid ChatGptAccountBatchSoldDTO batchSoldDTO) {
+        return Result.success(chatGptAccountService.batchUpdateAccountSold(batchSoldDTO));
     }
 
     /**

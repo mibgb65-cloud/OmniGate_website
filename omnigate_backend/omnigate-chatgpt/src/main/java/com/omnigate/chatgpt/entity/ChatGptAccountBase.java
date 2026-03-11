@@ -59,6 +59,12 @@ public class ChatGptAccountBase extends BaseEntity {
     private String accountStatus;
 
     /**
+     * 是否已出售。
+     */
+    @TableField("is_sold")
+    private Boolean sold;
+
+    /**
      * 订阅到期日期。
      */
     private LocalDate expireDate;

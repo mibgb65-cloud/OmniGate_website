@@ -19,10 +19,6 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  lifecycleItems: {
-    type: Array,
-    default: () => [],
-  },
   totpSecret: {
     type: String,
     default: '',
@@ -69,27 +65,27 @@ function resolveCredentialVariant(key) {
 </script>
 
 <template>
-  <aside class="side-stack">
-    <article class="surface-card">
-      <header class="panel-header panel-header--compact">
+  <aside class="ops-rail">
+    <article class="surface-card rail-card rail-card--status">
+      <header class="rail-head">
         <div>
-          <span class="section-kicker">Status Routing</span>
-          <h2>快速状态切换</h2>
-          <p>把高频状态动作前置，不需要先进入表单区再保存。</p>
+          <span class="rail-kicker">Status Routing</span>
+          <h2>状态命令台</h2>
+          <p>把高频状态改动放在右侧独立命令区，不需要先进入编辑态。</p>
         </div>
       </header>
 
-      <div class="status-action-grid">
+      <div class="status-command-grid">
         <button
           v-for="item in props.statusActionCards"
           :key="item.value"
           type="button"
-          class="status-action-card"
+          class="status-command-card"
           :class="[`tone-${item.tone}`, { 'is-active': item.active }]"
           :disabled="props.statusUpdating"
           @click="emit('quick-status', item.value)"
         >
-          <div class="status-action-card__top">
+          <div class="status-command-card__top">
             <strong>{{ item.loading ? '处理中...' : item.label }}</strong>
             <span>{{ item.note }}</span>
           </div>
@@ -98,54 +94,51 @@ function resolveCredentialVariant(key) {
       </div>
     </article>
 
-    <article class="surface-card">
-      <header class="panel-header panel-header--compact">
+    <article class="surface-card rail-card">
+      <header class="rail-head">
         <div>
-          <span class="section-kicker">Credential Vault</span>
+          <span class="rail-kicker">Credential Vault</span>
           <h2>凭据保险库</h2>
-          <p>收拢复制动作和关键材料，保持和其他账号系统一致的查看方式。</p>
+          <p>复制动作、字段强弱和长文本令牌都统一在这一块处理。</p>
         </div>
       </header>
 
-      <div class="credential-focus-row">
-        <div
+      <div class="vault-grid">
+        <article
           v-for="item in props.credentialVaultItems"
           :key="item.key"
-          class="credential-item"
+          class="vault-card"
           :class="[
-            `credential-item--${resolveCredentialVariant(item.key)}`,
+            `vault-card--${resolveCredentialVariant(item.key)}`,
             { 'is-empty': !item.rawValue, 'is-wide': item.multiline },
           ]"
-          :title="item.note || ''"
         >
-          <span class="credential-key">{{ item.label }}</span>
-          <span class="credential-value">{{ item.value }}</span>
-          <el-button
-            text
-            class="credential-copy-btn"
-            :class="{ 'is-copied': props.copiedField === item.key }"
-            :icon="props.copiedField === item.key ? Check : CopyDocument"
-            :disabled="!item.rawValue"
-            @click="emit('copy', item)"
-          >
-            {{ props.copiedField === item.key ? '已复制' : '复制' }}
-          </el-button>
-        </div>
+          <div class="vault-card__head">
+            <span>{{ item.label }}</span>
+            <el-button
+              text
+              class="vault-copy-btn"
+              :class="{ 'is-copied': props.copiedField === item.key }"
+              :icon="props.copiedField === item.key ? Check : CopyDocument"
+              :disabled="!item.rawValue"
+              @click="emit('copy', item)"
+            >
+              {{ props.copiedField === item.key ? '已复制' : '复制' }}
+            </el-button>
+          </div>
+          <strong>{{ item.value }}</strong>
+          <p>{{ item.note }}</p>
+        </article>
       </div>
-
-      <p class="vault-panel-hint">长字段默认折叠展示，复制后可直接用于人工接管或任务执行。</p>
     </article>
 
-    <article class="surface-card">
-      <header class="panel-header panel-header--compact">
+    <article class="surface-card rail-card rail-card--session">
+      <header class="rail-head">
         <div>
-          <span class="section-kicker">Session Automation</span>
-          <h2>Session 更新</h2>
-          <p>触发 worker 登录 ChatGPT，重新抓取并回写当前账号的 SessionToken。</p>
+          <span class="rail-kicker">Session Automation</span>
+          <h2>Session 抓取</h2>
+          <p>直接调起 worker 登录 ChatGPT，重新抓取并回写当前账号的 SessionToken。</p>
         </div>
-      </header>
-
-      <div class="automation-stack">
         <el-button
           type="primary"
           class="session-sync-btn"
@@ -155,403 +148,395 @@ function resolveCredentialVariant(key) {
         >
           更新 Session
         </el-button>
+      </header>
 
-        <div v-if="props.sessionTask" class="task-status-card">
-          <el-alert :type="props.sessionTaskAlertType" :closable="false" show-icon>
-            <template #title>
-              最近任务：{{ props.sessionTaskActionText }} · {{ props.sessionTaskStatusText }}
-            </template>
-            <div class="task-meta-grid">
-              <div class="task-meta-item">
-                <span>状态</span>
-                <el-tag :type="props.sessionTaskTagType" effect="light">
-                  {{ props.sessionTaskStatusText }}
-                </el-tag>
-              </div>
-              <div class="task-meta-item">
-                <span>TaskRunId</span>
-                <strong>{{ props.sessionTask.taskRunId || '-' }}</strong>
-              </div>
-              <div class="task-meta-item">
-                <span>RootRunId</span>
-                <strong>{{ props.sessionTask.rootRunId || '-' }}</strong>
-              </div>
-              <div class="task-meta-item">
-                <span>重试</span>
-                <strong>{{ props.sessionTask.attemptNo || '-' }} / {{ props.sessionTask.maxAttempts || '-' }}</strong>
-              </div>
-              <div v-if="props.sessionTask.lastCheckpoint" class="task-meta-item">
-                <span>检查点</span>
-                <strong>{{ props.sessionTask.lastCheckpoint }}</strong>
-              </div>
-            </div>
-            <p v-if="props.sessionTask.errorMessage" class="task-error-text">{{ props.sessionTask.errorMessage }}</p>
-          </el-alert>
+      <div v-if="props.sessionTask" class="session-feedback">
+        <div class="session-feedback__summary">
+          <span>最近任务</span>
+          <strong>{{ props.sessionTaskActionText }}</strong>
+          <el-tag :type="props.sessionTaskTagType" effect="light">
+            {{ props.sessionTaskStatusText }}
+          </el-tag>
         </div>
-        <p v-else class="task-placeholder">暂未发起 Session 更新任务。</p>
+
+        <div class="session-meta-grid">
+          <div class="session-meta-item">
+            <span>TaskRunId</span>
+            <strong>{{ props.sessionTask.taskRunId || '-' }}</strong>
+          </div>
+          <div class="session-meta-item">
+            <span>RootRunId</span>
+            <strong>{{ props.sessionTask.rootRunId || '-' }}</strong>
+          </div>
+          <div class="session-meta-item">
+            <span>重试</span>
+            <strong>{{ props.sessionTask.attemptNo || '-' }} / {{ props.sessionTask.maxAttempts || '-' }}</strong>
+          </div>
+          <div class="session-meta-item">
+            <span>检查点</span>
+            <strong>{{ props.sessionTask.lastCheckpoint || '-' }}</strong>
+          </div>
+        </div>
+
+        <el-alert
+          :type="props.sessionTaskAlertType"
+          :closable="false"
+          class="session-alert"
+          show-icon
+        >
+          <template #title>任务状态已同步到详情页侧轨</template>
+          <div v-if="props.sessionTask.errorMessage" class="session-error-text">
+            {{ props.sessionTask.errorMessage }}
+          </div>
+        </el-alert>
+      </div>
+      <div v-else class="session-placeholder">
+        <strong>暂未发起 Session 更新任务</strong>
+        <p>发起后状态会持续留在详情页侧轨里，直到任务结束。</p>
       </div>
     </article>
 
-    <article class="surface-card">
-      <header class="panel-header panel-header--compact">
-        <div>
-          <span class="section-kicker">Live 2FA Code</span>
-          <h2>动态验证码</h2>
-          <p>直接根据当前账号的 2FA 密钥生成验证码，便于复制后立即使用。</p>
-        </div>
-      </header>
+    <div class="support-grid">
+      <article class="surface-card rail-card">
+        <header class="rail-head rail-head--compact">
+          <div>
+            <span class="rail-kicker">Live 2FA Code</span>
+            <h2>动态验证码</h2>
+            <p>从当前账号密钥直接生成验证码，适合临时人工接管。</p>
+          </div>
+        </header>
 
-      <TotpCodeTool :secret="props.totpSecret" :allow-manual-input="false" />
-    </article>
-
-    <article class="surface-card">
-      <header class="panel-header panel-header--compact">
-        <div>
-          <span class="section-kicker">Lifecycle Record</span>
-          <h2>生命周期记录</h2>
-          <p>用于确认资产何时创建、何时更新以及当前所属状态。</p>
-        </div>
-      </header>
-
-      <div class="meta-list">
-        <div v-for="item in props.lifecycleItems" :key="item.label" class="meta-row">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-        </div>
-      </div>
-    </article>
+        <TotpCodeTool :secret="props.totpSecret" :allow-manual-input="false" />
+      </article>
+    </div>
   </aside>
 </template>
 
 <style scoped>
-.side-stack {
+.ops-rail {
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .surface-card {
-  padding: 24px;
-  border-radius: 22px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(249, 115, 22, 0.08), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.08);
 }
 
-.panel-header {
+.rail-card {
+  display: grid;
+  gap: 18px;
+}
+
+.rail-card--status,
+.rail-card--session {
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+}
+
+.rail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
 }
 
-.panel-header--compact {
-  margin-bottom: 16px;
+.rail-head--compact {
+  margin-bottom: -2px;
 }
 
-.section-kicker {
+.rail-kicker {
   display: block;
   margin-bottom: 8px;
+  color: #0f766e;
   font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #64748b;
 }
 
-.panel-header h2 {
+.rail-head h2 {
   margin: 0;
   color: #0f172a;
-  font-size: 1.08rem;
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  font-size: 1.12rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
-.panel-header p {
+.rail-head p {
   margin: 6px 0 0;
-  color: #64748b;
-  font-size: 0.85rem;
-  line-height: 1.6;
+  color: #475569;
+  font-size: 0.84rem;
+  line-height: 1.68;
 }
 
-.status-action-grid {
+.status-command-grid {
   display: grid;
   gap: 12px;
 }
 
-.status-action-card {
-  width: 100%;
+.status-command-card {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
   padding: 16px;
-  border: none;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   text-align: left;
   cursor: pointer;
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
-    background 180ms ease;
+    border-color 180ms ease;
 }
 
-.status-action-card:hover:not(:disabled) {
+.status-command-card:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow:
-    inset 0 0 0 1px rgba(15, 23, 42, 0.08),
-    0 16px 34px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
 }
 
-.status-action-card:disabled {
+.status-command-card:disabled {
   cursor: wait;
-  opacity: 0.78;
+  opacity: 0.76;
 }
 
-.status-action-card__top {
+.status-command-card__top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.status-action-card__top strong {
+.status-command-card__top strong {
   color: #0f172a;
-  font-size: 0.96rem;
+  font-size: 0.98rem;
 }
 
-.status-action-card__top span {
-  color: #475569;
+.status-command-card__top span {
+  color: #64748b;
   font-size: 0.76rem;
 }
 
-.status-action-card p {
+.status-command-card p {
   margin: 0;
-  color: #64748b;
+  color: #475569;
   font-size: 0.82rem;
-  line-height: 1.6;
+  line-height: 1.66;
 }
 
-.status-action-card.is-active {
-  box-shadow:
-    inset 0 0 0 1px rgba(15, 23, 42, 0.1),
-    0 16px 34px rgba(15, 23, 42, 0.06);
+.status-command-card.is-active {
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
 }
 
-.status-action-card.tone-success.is-active {
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, rgba(255, 255, 255, 0.96) 100%);
+.status-command-card.tone-success.is-active {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.12), rgba(255, 255, 255, 0.96));
 }
 
-.status-action-card.tone-warning.is-active {
-  background: linear-gradient(180deg, rgba(245, 158, 11, 0.14) 0%, rgba(255, 255, 255, 0.96) 100%);
+.status-command-card.tone-warning.is-active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.14), rgba(255, 255, 255, 0.96));
 }
 
-.status-action-card.tone-danger.is-active {
-  background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(255, 255, 255, 0.96) 100%);
+.status-command-card.tone-danger.is-active {
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.12), rgba(255, 255, 255, 0.96));
 }
 
-.credential-focus-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.credential-item {
-  flex: 1 1 220px;
-  min-width: 0;
+.vault-grid {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vault-card {
+  display: grid;
   gap: 10px;
-  border-radius: 10px;
-  padding: 8px 10px;
+  min-height: 154px;
+  padding: 16px;
+  border-radius: 20px;
   border: 1px solid transparent;
 }
 
-.credential-item.is-wide {
-  flex-basis: 100%;
+.vault-card.is-wide {
+  grid-column: 1 / -1;
 }
 
-.credential-item--email {
+.vault-card--email {
   background: rgba(37, 99, 235, 0.08);
-  border-color: rgba(37, 99, 235, 0.26);
+  border-color: rgba(37, 99, 235, 0.22);
 }
 
-.credential-item--password {
+.vault-card--password {
   background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.22);
 }
 
-.credential-item--totp {
+.vault-card--totp {
   background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.24);
+  border-color: rgba(16, 185, 129, 0.22);
 }
 
-.credential-item--token {
+.vault-card--token {
   background: rgba(15, 23, 42, 0.06);
-  border-color: rgba(15, 23, 42, 0.14);
+  border-color: rgba(15, 23, 42, 0.12);
 }
 
-.credential-item.is-empty {
+.vault-card.is-empty {
   background: rgba(148, 163, 184, 0.08);
   border-color: rgba(148, 163, 184, 0.18);
 }
 
-.credential-key {
-  font-weight: 800;
-  white-space: nowrap;
+.vault-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.credential-item--email .credential-key {
-  color: #1d4ed8;
+.vault-card__head span {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.credential-item--password .credential-key {
-  color: #b45309;
-}
-
-.credential-item--totp .credential-key {
-  color: #047857;
-}
-
-.credential-item--token .credential-key {
+.vault-card strong {
   color: #0f172a;
+  font-size: 0.96rem;
+  line-height: 1.58;
+  word-break: break-word;
 }
 
-.credential-item.is-empty .credential-key {
-  color: #64748b;
+.vault-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.64;
 }
 
-.credential-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: 'Space Grotesk', sans-serif;
-  color: #0f172a;
-}
-
-.credential-item.is-empty .credential-value {
-  color: #64748b;
-}
-
-.credential-copy-btn {
-  flex-shrink: 0;
-  height: 28px;
+.vault-copy-btn {
+  height: 30px;
   padding: 0 10px;
   border-radius: 999px;
   color: #475569;
-  background: rgba(148, 163, 184, 0.12);
-  transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 180ms ease,
-    color 180ms ease,
-    box-shadow 180ms ease;
+  background: rgba(255, 255, 255, 0.42);
 }
 
-.credential-copy-btn:hover {
-  color: #0f172a;
-  background: rgba(148, 163, 184, 0.22);
-}
-
-.credential-copy-btn:active {
-  transform: scale(0.92);
-}
-
-.credential-copy-btn.is-copied {
+.vault-copy-btn.is-copied {
   color: #047857;
-  background: rgba(16, 185, 129, 0.2);
-  box-shadow: 0 6px 14px rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.18);
 }
 
-.credential-copy-btn:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
+.session-sync-btn {
+  border-radius: 999px;
 }
 
-.vault-panel-hint {
-  margin: 12px 0 0;
-  color: #64748b;
-  font-size: 0.78rem;
-  line-height: 1.6;
-}
-
-.automation-stack {
+.session-feedback {
   display: grid;
   gap: 14px;
 }
 
-.session-sync-btn {
-  width: 100%;
-  border-radius: 14px;
+.session-feedback__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.04);
 }
 
-.task-status-card {
-  margin-top: 2px;
+.session-feedback__summary span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.task-meta-grid {
-  margin-top: 12px;
+.session-feedback__summary strong {
+  color: #0f172a;
+  font-size: 0.96rem;
+}
+
+.session-meta-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.task-meta-item {
-  border-radius: 12px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  padding: 10px 12px;
+.session-meta-item {
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.task-meta-item span {
-  font-size: 0.78rem;
+.session-meta-item span {
   color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.task-meta-item strong {
+.session-meta-item strong {
   color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.54;
   word-break: break-all;
 }
 
-.task-error-text {
-  margin: 12px 0 0;
+.session-alert {
+  border-radius: 18px;
+}
+
+.session-error-text {
   color: #991b1b;
   word-break: break-word;
 }
 
-.task-placeholder {
+.session-placeholder {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.session-placeholder strong {
+  color: #0f172a;
+  font-size: 0.96rem;
+}
+
+.session-placeholder p {
   margin: 0;
-  color: #64748b;
+  color: #475569;
   font-size: 0.84rem;
   line-height: 1.7;
 }
 
-.meta-list {
+.support-grid {
   display: grid;
+  gap: 16px;
 }
 
-.meta-row {
-  display: grid;
-  gap: 6px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.meta-row:last-child {
-  border-bottom: none;
-}
-
-.meta-row span {
-  color: #64748b;
-  font-size: 0.78rem;
-}
-
-.meta-row strong {
-  color: #0f172a;
-  font-size: 0.92rem;
-  font-weight: 600;
-  word-break: break-all;
+@media (max-width: 960px) {
+  .vault-grid,
+  .session-meta-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -559,33 +544,19 @@ function resolveCredentialVariant(key) {
     padding: 20px;
   }
 
-  .panel-header,
-  .status-action-card__top {
+  .rail-head,
+  .status-command-card__top {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .credential-focus-row {
-    gap: 8px;
-  }
-
-  .credential-item {
-    gap: 6px;
-    padding: 8px;
-  }
-
-  .task-meta-grid {
-    grid-template-columns: 1fr;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .status-action-card,
-  .credential-copy-btn {
+  .status-command-card {
     transition: none;
   }
 
-  .status-action-card:hover:not(:disabled) {
+  .status-command-card:hover:not(:disabled) {
     transform: none;
   }
 }

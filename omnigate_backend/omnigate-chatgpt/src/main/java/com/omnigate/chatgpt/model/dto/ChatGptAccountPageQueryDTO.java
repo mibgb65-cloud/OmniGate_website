@@ -42,4 +42,9 @@ public class ChatGptAccountPageQueryDTO {
      */
     @Pattern(regexp = "active|locked|banned", message = "账号状态仅支持 active/locked/banned")
     private String accountStatus;
+
+    /**
+     * 是否已出售。
+     */
+    private Boolean sold;
 }

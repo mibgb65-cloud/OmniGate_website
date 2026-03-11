@@ -50,6 +50,11 @@ public class ChatGptAccountUpdateDTO {
     private String accountStatus;
 
     /**
+     * 是否已出售。
+     */
+    private Boolean sold;
+
+    /**
      * 订阅到期日期。
      */
     private LocalDate expireDate;

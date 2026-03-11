@@ -14,6 +14,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  backLabel: {
+    type: String,
+    default: '返回账号池',
+  },
   editing: {
     type: Boolean,
     default: false,
@@ -34,6 +38,14 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  formatSoldStatus: {
+    type: Function,
+    required: true,
+  },
+  resolveSoldTag: {
+    type: Function,
+    required: true,
+  },
   formatSubTier: {
     type: Function,
     required: true,
@@ -50,13 +62,16 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
 <template>
   <section class="hero-panel">
     <div class="hero-main">
-      <el-button text :icon="ArrowLeft" class="back-link" @click="emit('back')">返回账号池</el-button>
+      <div class="hero-topline">
+        <el-button text :icon="ArrowLeft" class="back-link" @click="emit('back')">{{ props.backLabel }}</el-button>
+        <span class="hero-path">ChatGPT / Asset Detail</span>
+      </div>
 
-      <div class="hero-kicker">ChatGPT Asset Profile</div>
+      <span class="hero-kicker">Asset Command Center</span>
 
       <div class="hero-copy">
         <h1>{{ props.detail?.email || '账号详情' }}</h1>
-        <p>围绕身份、会话材料、安全状态和生命周期组织操作入口，让维护动作集中在一个工作台完成。</p>
+        <p>围绕状态、凭据、自动化任务和生命周期组织维护动作，让账号详情页真正变成一套可操作的资产面板。</p>
       </div>
 
       <div class="hero-badges">
@@ -66,7 +81,22 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
         <el-tag :type="props.resolveTierTag(props.detail?.subTier)" effect="plain">
           {{ props.formatSubTier(props.detail?.subTier) }}
         </el-tag>
+        <el-tag :type="props.resolveSoldTag(props.detail?.sold)" effect="plain">
+          {{ props.formatSoldStatus(props.detail?.sold) }}
+        </el-tag>
         <el-tag effect="plain">到期 {{ props.formatDisplayDate(props.detail?.expireDate, { includeTime: false }) }}</el-tag>
+      </div>
+
+      <div class="hero-actions">
+        <el-button class="hero-action-btn hero-action-btn--accent" :icon="EditPen" @click="emit(props.editing ? 'cancel-edit' : 'start-edit')">
+          {{ props.editing ? '退出编辑' : '编辑资料' }}
+        </el-button>
+        <el-button class="hero-action-btn" :icon="Refresh" @click="emit('refresh')">刷新</el-button>
+        <el-button class="hero-action-btn" :icon="Download" @click="emit('export')">导出账号</el-button>
+        <el-button class="hero-action-btn" :icon="CopyDocument" @click="emit('copy-email')">
+          {{ props.copiedField === 'hero-email' ? '已复制邮箱' : '复制邮箱' }}
+        </el-button>
+        <el-button type="danger" plain :icon="Delete" :loading="props.deleting" @click="emit('delete')">删除账号</el-button>
       </div>
     </div>
 
@@ -79,32 +109,11 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
       </div>
 
       <div class="command-grid">
-        <article
-          v-for="item in props.commandDeck"
-          :key="item.label"
-          class="command-card"
-          :class="`tone-${item.tone}`"
-        >
+        <article v-for="item in props.commandDeck" :key="item.label" class="command-card" :class="`tone-${item.tone}`">
           <span>{{ item.label }}</span>
           <strong>{{ item.value }}</strong>
           <em>{{ item.hint }}</em>
         </article>
-      </div>
-
-      <div class="hero-actions">
-        <el-button
-          class="hero-action-btn hero-action-btn--accent"
-          :icon="EditPen"
-          @click="emit(props.editing ? 'cancel-edit' : 'start-edit')"
-        >
-          {{ props.editing ? '退出编辑' : '编辑资料' }}
-        </el-button>
-        <el-button class="hero-action-btn" :icon="Refresh" @click="emit('refresh')">刷新</el-button>
-        <el-button class="hero-action-btn" :icon="Download" @click="emit('export')">导出账号</el-button>
-        <el-button class="hero-action-btn" :icon="CopyDocument" @click="emit('copy-email')">
-          {{ props.copiedField === 'hero-email' ? '已复制邮箱' : '复制邮箱' }}
-        </el-button>
-        <el-button type="danger" plain :icon="Delete" :loading="props.deleting" @click="emit('delete')">删除账号</el-button>
       </div>
     </div>
   </section>
@@ -114,16 +123,16 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
 .hero-panel {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   gap: 20px;
-  padding: 28px;
+  padding: 30px;
   overflow: hidden;
   border-radius: 28px;
   color: #e2e8f0;
   background:
-    radial-gradient(circle at 88% 18%, rgba(202, 138, 4, 0.16), transparent 26%),
-    radial-gradient(circle at 18% 10%, rgba(56, 189, 248, 0.12), transparent 24%),
-    linear-gradient(135deg, rgba(2, 6, 23, 0.98) 0%, rgba(15, 23, 42, 0.96) 60%, rgba(28, 55, 87, 0.92) 100%);
+    radial-gradient(circle at 88% 18%, rgba(249, 115, 22, 0.16), transparent 26%),
+    radial-gradient(circle at 18% 10%, rgba(45, 212, 191, 0.14), transparent 24%),
+    linear-gradient(135deg, rgba(2, 6, 23, 0.98) 0%, rgba(15, 23, 42, 0.96) 58%, rgba(20, 54, 66, 0.92) 100%);
   box-shadow: 0 30px 70px rgba(2, 6, 23, 0.24);
 }
 
@@ -147,8 +156,16 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
 
 .hero-main {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   align-content: start;
+}
+
+.hero-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .back-link {
@@ -157,15 +174,22 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
   color: rgba(226, 232, 240, 0.9);
 }
 
+.hero-path {
+  color: rgba(191, 219, 254, 0.72);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .hero-kicker {
   width: fit-content;
   display: inline-flex;
   align-items: center;
   padding: 8px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(202, 138, 4, 0.2);
-  background: rgba(202, 138, 4, 0.12);
-  color: #facc15;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  background: rgba(45, 212, 191, 0.12);
+  color: #99f6e4;
   font-size: 0.76rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -205,7 +229,7 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
   display: grid;
   gap: 18px;
   align-content: start;
-  padding: 18px;
+  padding: 20px;
   border-radius: 22px;
   border: 1px solid rgba(226, 232, 240, 0.12);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
@@ -269,11 +293,11 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
 }
 
 .hero-action-btn--accent {
-  --el-button-bg-color: rgba(212, 175, 55, 0.18);
-  --el-button-border-color: rgba(212, 175, 55, 0.28);
-  --el-button-text-color: #f8fafc;
-  --el-button-hover-bg-color: rgba(212, 175, 55, 0.28);
-  --el-button-hover-border-color: rgba(212, 175, 55, 0.42);
+  --el-button-bg-color: rgba(45, 212, 191, 0.18);
+  --el-button-border-color: rgba(45, 212, 191, 0.28);
+  --el-button-text-color: #f0fdfa;
+  --el-button-hover-bg-color: rgba(45, 212, 191, 0.28);
+  --el-button-hover-border-color: rgba(94, 234, 212, 0.42);
 }
 
 @media (max-width: 1080px) {
@@ -283,12 +307,15 @@ const emit = defineEmits(['back', 'refresh', 'export', 'copy-email', 'start-edit
 }
 
 @media (max-width: 760px) {
-  .command-grid {
-    grid-template-columns: 1fr;
+  .hero-panel {
+    padding: 22px;
   }
 
-  .hero-panel {
-    padding: 20px;
+  .hero-topline,
+  .hero-actions,
+  .command-grid {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 </style>

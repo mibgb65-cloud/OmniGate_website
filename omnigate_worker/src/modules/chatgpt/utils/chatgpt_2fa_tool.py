@@ -48,7 +48,7 @@ class ChatGptTwoFactorTool:
     _TROUBLE_SCANNING_POLL_INTERVAL_SECONDS = 1.0
     _VERIFY_BUTTON_WAIT_SECONDS = 5.0
     _VERIFY_BUTTON_POLL_INTERVAL_SECONDS = 0.25
-    _POST_VERIFY_TIMEOUT_SECONDS = 20.0
+    _POST_VERIFY_TIMEOUT_SECONDS = 15.0  # 砍掉了冗余判定，超时时间可以适当缩短
     _POST_VERIFY_POLL_INTERVAL_SECONDS = 0.5
 
     async def setup_authenticator(self, page: Any) -> ChatGptTwoFactorSetupResult:
@@ -117,7 +117,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="generate_totp",
                 reason=f"验证码生成失败: {exc}",
-                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
+                secret_key=secret_key,
             )
         self._log_flow(
             logging.INFO,
@@ -133,7 +133,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="input_code",
                 reason="未找到 id 为 totp_otp 的输入框",
-                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
+                secret_key=secret_key,
             )
 
         self._log_flow(logging.INFO, "开始填写 TOTP 验证码", stage="验证码填写")
@@ -150,7 +150,7 @@ class ChatGptTwoFactorTool:
                 ok=False,
                 step="verify",
                 reason="未找到 Verify 按钮或按钮被禁用",
-                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
+                secret_key=secret_key,
             )
 
         verify_state = await self._wait_for_post_verify_state(page)
@@ -160,30 +160,23 @@ class ChatGptTwoFactorTool:
                 logging.WARNING,
                 "2FA 验证失败",
                 stage="验证码提交",
-                extra={
-                    "原因": reason,
-                    "当前URL": verify_state.get("current_url"),
-                },
+                extra={"原因": reason},
             )
             return ChatGptTwoFactorSetupResult(
                 ok=False,
                 step="verify",
                 reason=reason,
-                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥
+                secret_key=secret_key,
             )
 
         if verify_state["state"] != "done":
-            current_url = str(verify_state.get("current_url") or "").strip() or "未知"
             authenticator_enabled = "是" if verify_state.get("authenticator_enabled") else "否"
             setup_panel_visible = "是" if verify_state.get("setup_panel_visible") else "否"
-            success_toast_visible = "是" if verify_state.get("success_toast_visible") else "否"
             self._log_flow(
                 logging.WARNING,
                 "等待 2FA 绑定完成超时",
                 stage="验证码提交",
                 extra={
-                    "当前URL": current_url,
-                    "成功提示已出现": success_toast_visible,
                     "开关已开启": authenticator_enabled,
                     "验证面板仍可见": setup_panel_visible,
                 },
@@ -191,20 +184,11 @@ class ChatGptTwoFactorTool:
             return ChatGptTwoFactorSetupResult(
                 ok=False,
                 step="verify_transition",
-                reason=(
-                    "点击 Verify 后未确认到绑定完成，"
-                    f"成功提示已出现={success_toast_visible}，"
-                    f"开关已开启={authenticator_enabled}，验证面板仍可见={setup_panel_visible}"
-                ),
-                secret_key=secret_key, # 已修复：抛出异常时携带已获取的密钥，供外层兜底逻辑使用
+                reason=f"绑定确认超时，开关已开启={authenticator_enabled}，验证面板可见={setup_panel_visible}",
+                secret_key=secret_key,
             )
 
-        self._log_flow(
-            logging.INFO,
-            "2FA 绑定完成",
-            stage="流程完成",
-            extra={"最终URL": verify_state.get("current_url")},
-        )
+        self._log_flow(logging.INFO, "2FA 绑定完成", stage="流程完成")
         return ChatGptTwoFactorSetupResult(
             ok=True,
             step="done",
@@ -233,19 +217,12 @@ class ChatGptTwoFactorTool:
                     d.textContent.includes('Authenticator app') &&
                     d.textContent.includes('Use one-time codes')
                 );
-
-                if (!authSection) {
-                    return 'not_found';
-                }
+                if (!authSection) return 'not_found';
 
                 const toggleBtn = authSection.querySelector('button[role="switch"]');
-                if (!toggleBtn) {
-                    return 'not_found';
-                }
+                if (!toggleBtn) return 'not_found';
 
-                if (toggleBtn.getAttribute('aria-checked') === 'true') {
-                    return 'already_on';
-                }
+                if (toggleBtn.getAttribute('aria-checked') === 'true') return 'already_on';
 
                 toggleBtn.click();
                 return 'clicked';
@@ -256,27 +233,15 @@ class ChatGptTwoFactorTool:
     async def _open_trouble_scanning(self, page: Any) -> int | None:
         """轮询切换到明文密钥展示区域，成功时返回点击时的探测次数。"""
 
-        self._log_flow(
-            logging.INFO,
-            "等待并点击 Trouble scanning 按钮",
-            stage="密钥展示",
-            extra={
-                "最大探测次数": self._TROUBLE_SCANNING_POLL_LIMIT,
-                "探测间隔秒": f"{self._TROUBLE_SCANNING_POLL_INTERVAL_SECONDS:.0f}",
-            },
-        )
+        self._log_flow(logging.INFO, "等待并点击 Trouble scanning 按钮", stage="密钥展示")
         for attempt in range(1, self._TROUBLE_SCANNING_POLL_LIMIT + 1):
             clicked = bool(
                 await page.evaluate(
                     """
                     (() => {
                         const btns = Array.from(document.querySelectorAll('button'));
-                        const target = btns.find(
-                            b => (b.innerText || '').trim() === 'Trouble scanning?'
-                        );
-                        if (!target || target.offsetParent === null) {
-                            return false;
-                        }
+                        const target = btns.find(b => (b.innerText || '').trim() === 'Trouble scanning?');
+                        if (!target || target.offsetParent === null) return false;
                         target.click();
                         return true;
                     })();
@@ -284,16 +249,8 @@ class ChatGptTwoFactorTool:
                 )
             )
             if clicked:
-                self._log_flow(
-                    logging.INFO,
-                    "已点击 Trouble scanning 按钮",
-                    stage="密钥展示",
-                    extra={"探测次数": attempt},
-                )
                 return attempt
-
             await asyncio.sleep(self._TROUBLE_SCANNING_POLL_INTERVAL_SECONDS)
-
         return None
 
     async def _extract_secret_key(self, page: Any) -> str | None:
@@ -304,17 +261,13 @@ class ChatGptTwoFactorTool:
             """
             (() => {
                 const codeDiv = document.querySelector('div[aria-label="Copy code"]');
-                if (codeDiv) {
-                    return codeDiv.innerText.trim();
-                }
-                return null;
+                return codeDiv ? codeDiv.innerText.trim() : null;
             })();
             """
         )
-        if secret_key_raw is None:
+        if not secret_key_raw:
             return None
-        normalized_secret = str(secret_key_raw).replace(" ", "").strip()
-        return normalized_secret or None
+        return str(secret_key_raw).replace(" ", "").strip() or None
 
     async def _click_verify(self, page: Any) -> bool:
         """提交 2FA 验证码。"""
@@ -326,38 +279,14 @@ class ChatGptTwoFactorTool:
                 await page.evaluate(
                     """
                     (() => {
-                        const isVisible = el => {
-                            if (!el) {
-                                return false;
-                            }
-                            const style = window.getComputedStyle(el);
-                            if (style.display === 'none' || style.visibility === 'hidden') {
-                                return false;
-                            }
-                            const rect = el.getBoundingClientRect();
-                            return rect.width > 0 && rect.height > 0;
-                        };
+                        const isVisible = el => el && el.offsetParent !== null;
                         const btns = Array.from(document.querySelectorAll('button'));
-                        const verifyBtn = btns.find(
-                            b => (b.innerText || '').trim() === 'Verify' && isVisible(b)
-                        );
-                        if (!verifyBtn) {
+                        const verifyBtn = btns.find(b => (b.innerText || '').trim() === 'Verify' && isVisible(b));
+                        
+                        if (!verifyBtn || verifyBtn.disabled || verifyBtn.getAttribute('aria-disabled') === 'true') {
                             return false;
                         }
-                        const disabled = verifyBtn.disabled || verifyBtn.getAttribute('aria-disabled') === 'true';
-                        if (disabled) {
-                            return false;
-                        }
-                        verifyBtn.scrollIntoView({ block: 'center', inline: 'center' });
-                        for (const eventName of ['mousedown', 'mouseup', 'click']) {
-                            verifyBtn.dispatchEvent(
-                                new MouseEvent(eventName, {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window,
-                                })
-                            );
-                        }
+                        
                         verifyBtn.click();
                         return true;
                     })();
@@ -370,180 +299,93 @@ class ChatGptTwoFactorTool:
         return False
 
     async def _wait_for_post_verify_state(self, page: Any) -> dict[str, Any]:
-        """等待 Verify 提交后的页面收口，确认成功、错误或超时。"""
+        """极简版状态轮询：只找明确的错误提示，或者等待弹窗消失且开关亮起。"""
 
         self._log_flow(
             logging.INFO,
-            "等待 2FA 验证后的页面收口",
+            "等待 2FA 验证结果...",
             stage="验证码提交",
             extra={"超时秒": f"{self._POST_VERIFY_TIMEOUT_SECONDS:.0f}"},
         )
         deadline = asyncio.get_running_loop().time() + self._POST_VERIFY_TIMEOUT_SECONDS
-        last_state: dict[str, Any] = {"state": "timeout", "current_url": await self._get_current_url(page)}
+        last_state = {"state": "timeout"}
 
         while asyncio.get_running_loop().time() < deadline:
             snapshot = await self._collect_post_verify_state(page)
             last_state = snapshot
-            if self._is_post_verify_success(snapshot):
-                return {**snapshot, "state": "done"}
 
+            # 1. 发现明确错误（如 Invalid code），直接宣告失败，不用死等
             reason = str(snapshot.get("error_text") or "").strip()
             if reason:
                 return {**snapshot, "state": "error", "reason": reason}
 
+            # 2. 开关亮起且填写面板已经消失，宣告成功
+            if snapshot.get("authenticator_enabled") and not snapshot.get("setup_panel_visible"):
+                return {**snapshot, "state": "done"}
+
             await asyncio.sleep(self._POST_VERIFY_POLL_INTERVAL_SECONDS)
 
-        return {
-            **last_state,
-            "state": "timeout",
-            "current_url": last_state.get("current_url") or await self._get_current_url(page),
-        }
+        return {**last_state, "state": "timeout"}
 
     async def _collect_post_verify_state(self, page: Any) -> dict[str, Any]:
-        """采集 Verify 提交后的页面状态，用于判断是否已完成绑定。"""
+        """精简版 JS 探针，只收集核心数据。"""
 
         raw_state = await page.evaluate(
             """
             (() => {
-                const marker = '__OMNIGATE_2FA_POST_VERIFY_STATE__';
                 const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
-                const isVisible = el => {
-                    if (!el) {
-                        return false;
-                    }
-                    const style = window.getComputedStyle(el);
-                    if (style.display === 'none' || style.visibility === 'hidden') {
-                        return false;
-                    }
-                    const rect = el.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0;
-                };
+                const isVisible = el => el && el.offsetParent !== null;
 
+                // 检查开关是否亮起
                 const divs = Array.from(document.querySelectorAll('div'));
                 const authSection = divs.find(d =>
                     (d.textContent || '').includes('Authenticator app') &&
                     (d.textContent || '').includes('Use one-time codes')
                 );
                 const toggleBtn = authSection ? authSection.querySelector('button[role="switch"]') : null;
+                const authenticatorEnabled = !!toggleBtn && toggleBtn.getAttribute('aria-checked') === 'true';
 
+                // 检查弹窗面板是否还在（找那个输入框或者 Verify 按钮）
                 const otpInput = document.querySelector('input#totp_otp');
-                const prompt = document.querySelector('textarea#prompt-textarea, [id="prompt-textarea"]');
-                const copyCodeDiv = document.querySelector('div[aria-label="Copy code"]');
-                const btns = Array.from(document.querySelectorAll('button'));
-                const verifyBtn = btns.find(
+                const verifyBtn = Array.from(document.querySelectorAll('button')).find(
                     b => (b.innerText || '').trim() === 'Verify' && isVisible(b)
                 );
-                const troubleScanningBtn = btns.find(
-                    b => (b.innerText || '').trim() === 'Trouble scanning?' && isVisible(b)
-                );
-                const setupPanelVisible = (
-                    isVisible(otpInput) ||
-                    isVisible(verifyBtn) ||
-                    isVisible(copyCodeDiv) ||
-                    isVisible(troubleScanningBtn)
-                );
-                const successToastVisible = Array.from(
-                    document.querySelectorAll('div, span, p, [role="status"], [aria-live]')
-                ).some(el => {
-                    if (!isVisible(el)) {
-                        return false;
-                    }
-                    const text = normalize(el.innerText || el.textContent);
-                    return text === 'Authenticator app enabled';
-                });
+                const setupPanelVisible = isVisible(otpInput) || isVisible(verifyBtn);
 
+                // 检查是否有明显的报错红字
                 const errorSelectors = [
-                    '[role="alert"]',
-                    '[data-error]',
-                    '.error-message',
-                    '.alert-error',
-                    '[aria-live="assertive"]',
-                    '[aria-invalid="true"]',
+                    '[role="alert"]', '.error-message', '.alert-error', 
+                    '[aria-live="assertive"]', '[aria-invalid="true"]'
                 ];
-
                 let errorText = '';
                 for (const selector of errorSelectors) {
                     const el = document.querySelector(selector);
-                    if (!isVisible(el)) {
-                        continue;
-                    }
-                    const text = normalize(el.innerText || el.textContent);
-                    if (text) {
-                        errorText = text;
-                        break;
+                    if (isVisible(el)) {
+                        errorText = normalize(el.innerText || el.textContent);
+                        if (errorText) break;
                     }
                 }
-
-                const bodyText = normalize(document.body ? document.body.innerText : '').toLowerCase();
+                
+                // 补充基于 body 文本的常见错误兜底
                 if (!errorText) {
-                    const knownErrorTexts = [
-                        'invalid code',
-                        'incorrect code',
-                        'wrong code',
-                        'expired code',
-                        'code expired',
-                        'something went wrong',
-                        'too many attempts',
-                    ];
+                    const bodyText = normalize(document.body ? document.body.innerText : '').toLowerCase();
+                    const knownErrorTexts = ['invalid code', 'incorrect code', 'wrong code', 'expired code', 'code expired', 'too many attempts'];
                     const matched = knownErrorTexts.find(token => bodyText.includes(token));
-                    if (matched) {
-                        errorText = matched;
-                    }
+                    if (matched) errorText = matched;
                 }
 
                 return {
-                    marker,
-                    current_url: window.location.href,
-                    otp_input_visible: isVisible(otpInput),
-                    verify_button_visible: isVisible(verifyBtn),
-                    copy_code_visible: isVisible(copyCodeDiv),
-                    trouble_scanning_visible: isVisible(troubleScanningBtn),
-                    success_toast_visible: successToastVisible,
+                    authenticator_enabled: authenticatorEnabled,
                     setup_panel_visible: setupPanelVisible,
-                    authenticator_enabled: !!toggleBtn && toggleBtn.getAttribute('aria-checked') === 'true',
-                    has_prompt: isVisible(prompt),
-                    has_recovery_codes: bodyText.includes('recovery codes') || bodyText.includes('backup codes'),
                     error_text: errorText,
                 };
             })();
             """
         )
-        if not isinstance(raw_state, dict):
-            return {"current_url": await self._get_current_url(page)}
-        return raw_state
-
-    def _is_post_verify_success(self, snapshot: dict[str, Any]) -> bool:
-        """基于页面快照判断 2FA 是否已完成绑定。"""
-
-        current_url = str(snapshot.get("current_url") or "").strip().lower()
-        authenticator_enabled = bool(snapshot.get("authenticator_enabled"))
-        has_prompt = bool(snapshot.get("has_prompt"))
-        has_recovery_codes = bool(snapshot.get("has_recovery_codes"))
-        setup_panel_visible = bool(snapshot.get("setup_panel_visible"))
-        success_toast_visible = bool(snapshot.get("success_toast_visible"))
-
-        if success_toast_visible:
-            return True
-        if has_recovery_codes:
-            return True
-        if authenticator_enabled and not setup_panel_visible:
-            return True
-        if has_prompt and not setup_panel_visible:
-            return True
-        return bool(current_url) and current_url != self._SECURITY_URL.lower() and not setup_panel_visible
-
-    async def _get_current_url(self, page: Any) -> str:
-        """读取当前页面 URL。"""
-
-        try:
-            return str(await page.evaluate("window.location.href") or "")
-        except Exception:  # noqa: BLE001
-            return ""
+        return raw_state if isinstance(raw_state, dict) else {}
 
     @staticmethod
     def _mask_secret(secret_key: str) -> str:
-        """对日志里的 TOTP 密钥做脱敏，避免完整泄露。"""
-
         normalized = str(secret_key).strip()
         if len(normalized) <= 8:
             return "***"
@@ -551,24 +393,13 @@ class ChatGptTwoFactorTool:
 
     @staticmethod
     def _mask_code(code: str) -> str:
-        """对日志里的 2FA 验证码做脱敏。"""
-
         normalized = str(code).strip()
         if len(normalized) <= 2:
             return "***"
         return f"{normalized[:2]}***"
 
     @classmethod
-    def _log_flow(
-        cls,
-        level: int,
-        message: str,
-        *,
-        stage: str,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        """统一输出 ChatGPT 2FA 日志，便于和注册主链路一起追踪。"""
-
+    def _log_flow(cls, level: int, message: str, *, stage: str, extra: dict[str, Any] | None = None) -> None:
         context_parts = [f"阶段={stage}"]
         for key, value in (extra or {}).items():
             if value is None:
@@ -576,5 +407,4 @@ class ChatGptTwoFactorTool:
             text = str(value).strip()
             if text:
                 context_parts.append(f"{key}={text}")
-
         logger.log(level, "%s %s | %s", cls._LOG_PREFIX, message, " | ".join(context_parts))

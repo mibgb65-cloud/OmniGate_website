@@ -3,6 +3,7 @@ package com.omnigate.chatgpt.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.omnigate.chatgpt.entity.ChatGptAccountBase;
+import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchSoldDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchStatusDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountCreateDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountPageQueryDTO;
@@ -72,6 +73,14 @@ public interface ChatGptAccountService extends IService<ChatGptAccountBase> {
      * @return 更新成功数量
      */
     int batchUpdateAccountStatus(ChatGptAccountBatchStatusDTO batchStatusDTO);
+
+    /**
+     * 批量更新账号出售状态。
+     *
+     * @param batchSoldDTO 批量出售状态参数
+     * @return 更新成功数量
+     */
+    int batchUpdateAccountSold(ChatGptAccountBatchSoldDTO batchSoldDTO);
 
     /**
      * 删除单个账号。

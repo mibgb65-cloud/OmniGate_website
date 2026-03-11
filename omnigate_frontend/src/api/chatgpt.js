@@ -86,6 +86,14 @@ export function batchUpdateChatgptAccountStatus(data) {
   })
 }
 
+export function batchUpdateChatgptAccountSold(data) {
+  return request({
+    url: '/api/chatgpt/accounts/batch/sold',
+    method: 'patch',
+    data,
+  })
+}
+
 export function deleteChatgptAccount(id) {
   return request({
     url: `/api/chatgpt/accounts/${id}`,

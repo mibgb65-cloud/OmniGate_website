@@ -22,6 +22,8 @@ const route = useRoute()
 const router = useRouter()
 const TASK_STATUS_POLL_INTERVAL_MS = 2400
 const TASK_STATUS_RETRY_INTERVAL_MS = 4200
+const DETAIL_EMAIL_QUERY_KEY = 'accountEmail'
+const LIST_RETURN_QUERY_KEY = 'listQuery'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -45,6 +47,8 @@ const isTaskPending = computed(() => {
   const status = normalizeTaskStatus(activeTask.status)
   return status === 'queued' || status === 'running'
 })
+const hasListReturnContext = computed(() => Boolean(normalizeCell(readQueryValue(route.query, LIST_RETURN_QUERY_KEY))))
+const backButtonLabel = computed(() => hasListReturnContext.value ? '返回筛选结果' : '返回账号池')
 const subTierOptions = [
   { label: 'Free', value: 'free' },
   { label: 'Plus', value: 'plus' },
@@ -55,6 +59,10 @@ const statusOptions = [
   { label: '可用', value: 'active' },
   { label: '锁定', value: 'locked' },
   { label: '封禁', value: 'banned' },
+]
+const soldOptions = [
+  { label: '未出售', value: false },
+  { label: '已出售', value: true },
 ]
 const statusActionOptions = [
   { value: 'active', label: '可用', description: '适合继续登录与人工维护。', note: '允许继续使用', tone: 'success' },
@@ -68,6 +76,7 @@ const editForm = reactive({
   totpSecret: '',
   subTier: 'free',
   accountStatus: 'active',
+  sold: false,
   expireDate: '',
 })
 
@@ -143,6 +152,12 @@ const summaryItems = computed(() => {
       note: data.sessionToken ? `${String(data.sessionToken).length} 字符` : '暂无会话材料',
       tone: data.sessionToken ? 'primary' : 'neutral',
     },
+    {
+      label: '出售状态',
+      value: formatSoldStatus(data.sold),
+      note: data.sold ? '该账号已完成出售登记' : '仍可作为库存继续运营',
+      tone: data.sold ? 'warning' : 'success',
+    },
   ]
 })
 
@@ -166,6 +181,12 @@ const commandDeck = computed(() => {
       value: formatDisplayDate(data.expireDate, { includeTime: false }),
       hint: data.expireDate ? '需要关注续期' : '尚未设置生命周期',
       tone: 'warning',
+    },
+    {
+      label: '出售状态',
+      value: formatSoldStatus(data.sold),
+      hint: data.sold ? '资产已出库' : '当前仍在库存池',
+      tone: data.sold ? 'warning' : 'success',
     },
     {
       label: '最近更新',
@@ -218,10 +239,10 @@ const credentialVaultItems = computed(() => {
     {
       key: 'session-token',
       label: 'SessionToken',
-      value: toNullableText(data.sessionToken),
+      value: formatSensitivePreview(data.sessionToken),
       rawValue: data.sessionToken,
       note: data.sessionToken
-        ? `${String(data.sessionToken).length} 字符，可直接用于会话接管。`
+        ? `${String(data.sessionToken).length} 字符，默认只展示前后片段，复制时仍会拿到完整值。`
         : '暂无会话令牌，需要重新建立登录状态。',
       copyLabel: '复制令牌',
       tone: data.sessionToken ? 'ready' : 'empty',
@@ -260,12 +281,41 @@ const postureItems = computed(() => {
       value: data.sessionToken ? '可用' : '不可用',
       hint: data.sessionToken ? '已记录 SessionToken' : '暂无 SessionToken',
     },
+    {
+      label: '出售登记',
+      value: formatSoldStatus(data.sold),
+      hint: data.sold ? '已售出，后续以售后维护为主' : '未出售，可继续分配',
+    },
   ]
 })
 
 function normalizeCell(value) {
   const text = String(value ?? '').trim()
   return text || undefined
+}
+
+function readQueryValue(query, key) {
+  const value = query?.[key]
+  return Array.isArray(value) ? value[0] : value
+}
+
+function parseSerializedQuery(queryText) {
+  const text = normalizeCell(queryText)
+  if (!text) return {}
+  const query = {}
+  const params = new URLSearchParams(text)
+  params.forEach((value, key) => {
+    if (query[key] === undefined) {
+      query[key] = value
+      return
+    }
+    if (Array.isArray(query[key])) {
+      query[key].push(value)
+      return
+    }
+    query[key] = [query[key], value]
+  })
+  return query
 }
 
 function normalizeTaskStatus(status) {
@@ -412,6 +462,23 @@ function toNullableText(value) {
   return value || '-'
 }
 
+function formatSensitivePreview(value, options = {}) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return '-'
+
+  const {
+    head = 18,
+    tail = 12,
+    threshold = 42,
+  } = options
+
+  if (normalized.length <= threshold) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, head)}...${normalized.slice(-tail)}`
+}
+
 function formatAccountStatus(status) {
   return ({ active: '可用', locked: '锁定', banned: '封禁' }[status]) || status || '-'
 }
@@ -420,12 +487,20 @@ function formatSubTier(subTier) {
   return ({ free: 'Free', plus: 'Plus', team: 'Team', go: 'Go' }[subTier]) || subTier || '-'
 }
 
+function formatSoldStatus(sold) {
+  return sold ? '已出售' : '未出售'
+}
+
 function resolveStatusTag(status) {
   return status === 'active' ? 'success' : status === 'locked' ? 'warning' : status === 'banned' ? 'danger' : 'info'
 }
 
 function resolveTierTag(subTier) {
   return subTier === 'team' ? 'primary' : subTier === 'plus' ? 'success' : subTier === 'go' ? 'warning' : 'info'
+}
+
+function resolveSoldTag(sold) {
+  return sold ? 'danger' : 'success'
 }
 
 function formatDisplayDate(value, options = {}) {
@@ -453,6 +528,7 @@ function fillEditForm(data) {
   editForm.totpSecret = data?.totpSecret || ''
   editForm.subTier = data?.subTier || 'free'
   editForm.accountStatus = data?.accountStatus || 'active'
+  editForm.sold = Boolean(data?.sold)
   editForm.expireDate = data?.expireDate || ''
 }
 
@@ -465,6 +541,7 @@ function buildUpdatePayload() {
   const currentTotpSecret = normalizeCell(editForm.totpSecret) || ''
   const currentSubTier = normalizeCell(editForm.subTier) || ''
   const currentStatus = normalizeCell(editForm.accountStatus) || ''
+  const currentSold = Boolean(editForm.sold)
   const currentExpireDate = editForm.expireDate || ''
 
   if (currentEmail && currentEmail !== (source.email || '')) payload.email = currentEmail
@@ -473,6 +550,7 @@ function buildUpdatePayload() {
   if (currentTotpSecret !== (source.totpSecret || '')) payload.totpSecret = currentTotpSecret
   if (currentSubTier && currentSubTier !== (source.subTier || '')) payload.subTier = currentSubTier
   if (currentStatus && currentStatus !== (source.accountStatus || '')) payload.accountStatus = currentStatus
+  if (currentSold !== Boolean(source.sold)) payload.sold = currentSold
   if (currentExpireDate && currentExpireDate !== (source.expireDate || '')) payload.expireDate = currentExpireDate
 
   return payload
@@ -490,14 +568,14 @@ function syncBreadcrumbState(detailData) {
   }
 
   const email = String(detailData?.email || '').trim()
-  if (!email || String(route.query.email || '').trim() === email) {
+  if (!email || String(readQueryValue(route.query, DETAIL_EMAIL_QUERY_KEY) || '').trim() === email) {
     return
   }
 
   router.replace({
     query: {
       ...route.query,
-      email,
+      [DETAIL_EMAIL_QUERY_KEY]: email,
     },
   }).catch(() => {})
 }
@@ -533,14 +611,21 @@ function handleVaultCopy(item) {
   handleCopyValue(item?.rawValue, item?.label || '字段', item?.key || 'vault-item')
 }
 
+function buildListRouteLocation() {
+  const listQuery = parseSerializedQuery(readQueryValue(route.query, LIST_RETURN_QUERY_KEY))
+  return Object.keys(listQuery).length
+    ? { path: '/chatgpt/accounts', query: listQuery }
+    : { path: '/chatgpt/accounts' }
+}
+
 function handleBackToList() {
-  router.push('/chatgpt/accounts')
+  router.push(buildListRouteLocation())
 }
 
 async function fetchDetail() {
   if (!accountId.value) {
     ElMessage.error('账号 ID 无效')
-    router.replace('/chatgpt/accounts')
+    router.replace(buildListRouteLocation())
     return
   }
 
@@ -552,7 +637,7 @@ async function fetchDetail() {
     fillEditForm(detail.value)
   } catch {
     ElMessage.error('获取 ChatGPT 账号详情失败')
-    router.replace('/chatgpt/accounts')
+    router.replace(buildListRouteLocation())
   } finally {
     loading.value = false
   }
@@ -650,7 +735,7 @@ async function handleDelete() {
   try {
     await deleteChatgptAccount(detail.value.id)
     ElMessage.success('账号已删除')
-    await router.replace('/chatgpt/accounts')
+    await router.replace(buildListRouteLocation())
   } finally {
     deleting.value = false
   }
@@ -681,16 +766,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="detail-page" v-loading="loading">
+  <div class="detail-shell" v-loading="loading">
     <ChatgptDetailHero
       :detail="detail"
       :command-deck="commandDeck"
+      :back-label="backButtonLabel"
       :copied-field="copiedField"
       :editing="isEditing"
       :deleting="deleting"
       :format-account-status="formatAccountStatus"
       :resolve-status-tag="resolveStatusTag"
       :resolve-tier-tag="resolveTierTag"
+      :format-sold-status="formatSoldStatus"
+      :resolve-sold-tag="resolveSoldTag"
       :format-sub-tier="formatSubTier"
       :format-display-date="formatDisplayDate"
       @back="handleBackToList"
@@ -702,34 +790,38 @@ onBeforeUnmount(() => {
       @delete="handleDelete"
     />
 
-    <ChatgptDetailSummaryGrid :items="summaryItems" />
-
     <section class="workspace-grid">
-      <ChatgptDetailEditorPanel
-        ref="editorPanelRef"
-        :detail="detail"
-        :form="editForm"
-        :form-rules="formRules"
-        :sub-tier-options="subTierOptions"
+      <div class="workspace-main">
+        <ChatgptDetailSummaryGrid :items="summaryItems" />
+
+        <ChatgptDetailEditorPanel
+          ref="editorPanelRef"
+          :detail="detail"
+          :form="editForm"
+          :form-rules="formRules"
+          :sub-tier-options="subTierOptions"
         :status-options="statusOptions"
+        :sold-options="soldOptions"
         :posture-items="postureItems"
+        :lifecycle-items="lifecycleItems"
         :editing="isEditing"
         :saving="saving"
         :format-account-status="formatAccountStatus"
         :format-display-date="formatDisplayDate"
-        :format-sub-tier="formatSubTier"
-        @start-edit="handleStartEdit"
-        @cancel-edit="handleCancelEdit"
-        @reset="handleReset"
-        @save="handleSave"
-      />
+          :format-sub-tier="formatSubTier"
+          :format-sold-status="formatSoldStatus"
+          @start-edit="handleStartEdit"
+          @cancel-edit="handleCancelEdit"
+          @reset="handleReset"
+          @save="handleSave"
+        />
+      </div>
 
       <ChatgptDetailSidebar
         :status-action-cards="statusActionCards"
         :status-updating="statusUpdating"
         :credential-vault-items="credentialVaultItems"
         :copied-field="copiedField"
-        :lifecycle-items="lifecycleItems"
         :totp-secret="detail?.totpSecret"
         :session-sync-loading="actionLoading.syncSession"
         :session-sync-disabled="!detail?.id || isTaskPending"
@@ -747,20 +839,41 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.detail-page {
+.detail-shell {
   display: grid;
-  gap: 20px;
+  gap: 22px;
+  max-width: min(1720px, calc(100vw - 24px));
+  margin: 0 auto;
 }
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.16fr) minmax(330px, 0.84fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.workspace-main {
+  display: grid;
   gap: 18px;
+}
+
+@media (min-width: 1480px) {
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1.14fr) minmax(380px, 0.86fr);
+  }
 }
 
 @media (max-width: 1280px) {
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .detail-shell {
+    gap: 18px;
+    max-width: calc(100vw - 20px);
   }
 }
 </style>

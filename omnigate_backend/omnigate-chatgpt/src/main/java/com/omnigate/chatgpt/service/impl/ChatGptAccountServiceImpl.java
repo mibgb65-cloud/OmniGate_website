@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.omnigate.chatgpt.entity.ChatGptAccountBase;
 import com.omnigate.chatgpt.mapper.ChatGptAccountBaseMapper;
+import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchSoldDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountBatchStatusDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountCreateDTO;
 import com.omnigate.chatgpt.model.dto.ChatGptAccountPageQueryDTO;
@@ -36,6 +37,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
 
     private static final String DEFAULT_SUB_TIER = "free";
     private static final String DEFAULT_ACCOUNT_STATUS = "active";
+    private static final boolean DEFAULT_SOLD = false;
 
     /**
      * 新增单个账号。
@@ -97,11 +99,13 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
         String emailKeyword = normalize(queryDTO.getEmail());
         String subTier = normalize(queryDTO.getSubTier());
         String accountStatus = normalize(queryDTO.getAccountStatus());
+        Boolean sold = queryDTO.getSold();
 
         LambdaQueryWrapper<ChatGptAccountBase> countWrapper = Wrappers.lambdaQuery(ChatGptAccountBase.class)
                 .like(StringUtils.hasText(emailKeyword), ChatGptAccountBase::getEmail, emailKeyword)
                 .eq(StringUtils.hasText(subTier), ChatGptAccountBase::getSubTier, subTier)
-                .eq(StringUtils.hasText(accountStatus), ChatGptAccountBase::getAccountStatus, accountStatus);
+                .eq(StringUtils.hasText(accountStatus), ChatGptAccountBase::getAccountStatus, accountStatus)
+                .eq(sold != null, ChatGptAccountBase::getSold, sold);
         long total = baseMapper.selectCount(countWrapper);
 
         long current = queryDTO.getCurrent();
@@ -112,6 +116,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
                 .like(StringUtils.hasText(emailKeyword), ChatGptAccountBase::getEmail, emailKeyword)
                 .eq(StringUtils.hasText(subTier), ChatGptAccountBase::getSubTier, subTier)
                 .eq(StringUtils.hasText(accountStatus), ChatGptAccountBase::getAccountStatus, accountStatus)
+                .eq(sold != null, ChatGptAccountBase::getSold, sold)
                 .orderByDesc(ChatGptAccountBase::getCreatedAt)
                 .last("LIMIT " + size + " OFFSET " + offset);
         List<ChatGptAccountBase> records = baseMapper.selectList(listWrapper);
@@ -188,6 +193,10 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
             entity.setAccountStatus(accountStatus);
             changed = true;
         }
+        if (updateDTO.getSold() != null) {
+            entity.setSold(updateDTO.getSold());
+            changed = true;
+        }
         if (updateDTO.getExpireDate() != null) {
             entity.setExpireDate(updateDTO.getExpireDate());
             changed = true;
@@ -236,6 +245,29 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
                 .update();
         if (!updated) {
             throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "批量更新账号状态失败");
+        }
+        return ids.size();
+    }
+
+    /**
+     * 批量更新账号出售状态。
+     *
+     * @param batchSoldDTO 批量出售状态参数
+     * @return 更新成功数量
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUpdateAccountSold(ChatGptAccountBatchSoldDTO batchSoldDTO) {
+        List<Long> ids = distinctIds(batchSoldDTO.getIds());
+        assertIdsNotEmpty(ids);
+        assertAllExists(ids);
+
+        boolean updated = lambdaUpdate()
+                .in(ChatGptAccountBase::getId, ids)
+                .set(ChatGptAccountBase::getSold, batchSoldDTO.getSold())
+                .update();
+        if (!updated) {
+            throw new BizException(BizErrorCodeEnum.INTERNAL_SERVER_ERROR, "批量更新账号出售状态失败");
         }
         return ids.size();
     }
@@ -366,6 +398,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
         String accountStatus = normalize(createDTO.getAccountStatus());
         entity.setAccountStatus(StringUtils.hasText(accountStatus) ? accountStatus : DEFAULT_ACCOUNT_STATUS);
 
+        entity.setSold(createDTO.getSold() != null ? createDTO.getSold() : DEFAULT_SOLD);
         entity.setExpireDate(createDTO.getExpireDate());
         return entity;
     }
@@ -385,6 +418,7 @@ public class ChatGptAccountServiceImpl extends ServiceImpl<ChatGptAccountBaseMap
         vo.setTotpSecret(entity.getTotpSecret());
         vo.setSubTier(entity.getSubTier());
         vo.setAccountStatus(entity.getAccountStatus());
+        vo.setSold(Boolean.TRUE.equals(entity.getSold()));
         vo.setExpireDate(entity.getExpireDate());
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());

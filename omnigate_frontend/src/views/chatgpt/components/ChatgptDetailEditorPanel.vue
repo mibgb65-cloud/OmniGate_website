@@ -22,7 +22,15 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  soldOptions: {
+    type: Array,
+    default: () => [],
+  },
   postureItems: {
+    type: Array,
+    default: () => [],
+  },
+  lifecycleItems: {
     type: Array,
     default: () => [],
   },
@@ -43,6 +51,10 @@ const props = defineProps({
     required: true,
   },
   formatSubTier: {
+    type: Function,
+    required: true,
+  },
+  formatSoldStatus: {
     type: Function,
     required: true,
   },
@@ -72,26 +84,29 @@ defineExpose({
 </script>
 
 <template>
-  <article class="surface-card editor-panel" :class="{ 'is-editing': props.editing }">
-    <header class="panel-header">
-      <div>
-        <span class="section-kicker">{{ props.editing ? 'Account Editor' : 'Account Overview' }}</span>
-        <h2>{{ props.editing ? '账号资料编辑' : '账号资料概览' }}</h2>
+  <article class="editor-shell" :class="{ 'is-editing': props.editing }">
+    <header class="editor-header">
+      <div class="editor-header__copy">
+        <span class="editor-kicker">{{ props.editing ? 'Edit Workspace' : 'Asset Dossier' }}</span>
+        <h2>{{ props.editing ? '账号资料编辑台' : '账号资料总览' }}</h2>
         <p>
           {{
             props.editing
-              ? '密码留空表示不修改；SessionToken 和 2FA 密钥支持覆盖或清空。'
-              : '默认保持只读，只有在确实需要修改资料时再进入编辑态。'
+              ? '编辑被收拢成一次操作：身份、状态、出售登记和安全材料都在同一块里完成。'
+              : '默认保持只读，把浏览、判断和接管动作先收成一块“资料总览”，确认后再进入编辑。'
           }}
         </p>
       </div>
-      <el-button
-        class="panel-toggle-btn"
-        :class="{ 'panel-toggle-btn--accent': !props.editing }"
-        @click="emit(props.editing ? 'cancel-edit' : 'start-edit')"
-      >
-        {{ props.editing ? '取消编辑' : '编辑资料' }}
-      </el-button>
+
+      <div class="editor-header__actions">
+        <el-button
+          class="mode-toggle-btn"
+          :class="{ 'mode-toggle-btn--accent': !props.editing }"
+          @click="emit(props.editing ? 'cancel-edit' : 'start-edit')"
+        >
+          {{ props.editing ? '退出编辑' : '进入编辑' }}
+        </el-button>
+      </div>
     </header>
 
     <template v-if="props.editing">
@@ -100,20 +115,20 @@ defineExpose({
         :model="props.form"
         :rules="props.formRules"
         label-position="top"
-        class="detail-form"
+        class="editor-form"
       >
-        <section class="form-section">
-          <div class="form-section__header">
-            <span class="form-section__index">01</span>
+        <section class="editor-block">
+          <div class="block-head">
+            <div class="block-index">01</div>
             <div>
-              <strong>身份与生命周期</strong>
-              <p>用于识别账号和后续运维安排。</p>
+              <strong>身份与库存属性</strong>
+              <p>这里决定账号怎样被识别、是否可运营，以及后续能否继续流转。</p>
             </div>
           </div>
 
-          <div class="form-grid">
+          <div class="field-grid">
             <el-form-item label="账号邮箱" prop="email">
-              <el-input v-model.trim="props.form.email" placeholder="name@example.com" />
+              <el-input v-model.trim="props.form.email" name="email" autocomplete="username" placeholder="name@example.com" />
             </el-form-item>
             <el-form-item label="到期日期">
               <el-date-picker
@@ -143,242 +158,332 @@ defineExpose({
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="出售状态">
+              <el-select v-model="props.form.sold">
+                <el-option
+                  v-for="item in props.soldOptions"
+                  :key="String(item.value)"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
           </div>
         </section>
 
-        <section class="form-section">
-          <div class="form-section__header">
-            <span class="form-section__index">02</span>
+        <section class="editor-block">
+          <div class="block-head">
+            <div class="block-index">02</div>
             <div>
-              <strong>登录与安全材料</strong>
-              <p>集中维护人工接管所需的密码、SessionToken 和 2FA 信息。</p>
+              <strong>登录与接管材料</strong>
+              <p>密码、2FA 密钥和 SessionToken 会一起影响后续人工接管与自动化任务成功率。</p>
             </div>
           </div>
 
-          <div class="form-grid">
+          <div class="field-grid">
             <el-form-item label="登录密码" prop="password">
-              <el-input v-model.trim="props.form.password" type="password" show-password placeholder="留空表示不修改" />
+              <el-input
+                v-model.trim="props.form.password"
+                type="password"
+                show-password
+                name="password"
+                autocomplete="new-password"
+                placeholder="留空表示不修改"
+              />
             </el-form-item>
             <el-form-item label="2FA / TOTP 密钥" prop="totpSecret">
-              <el-input v-model.trim="props.form.totpSecret" placeholder="可选，留空表示不修改" />
+              <el-input
+                v-model.trim="props.form.totpSecret"
+                name="totpSecret"
+                autocomplete="off"
+                placeholder="可选，留空表示不修改"
+              />
             </el-form-item>
-            <el-form-item label="SessionToken" prop="sessionToken" class="span-2">
+            <el-form-item label="SessionToken" prop="sessionToken" class="span-all">
               <el-input
                 v-model.trim="props.form.sessionToken"
                 type="textarea"
-                :rows="5"
+                :rows="6"
                 resize="none"
-                placeholder="可留空"
+                name="sessionToken"
+                autocomplete="off"
+                placeholder="留空表示不修改；支持直接覆盖或清空"
               />
             </el-form-item>
           </div>
         </section>
       </el-form>
 
-      <div class="editor-footer">
+      <section class="editor-ops">
         <div class="posture-grid">
           <article v-for="item in props.postureItems" :key="item.label" class="posture-card">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
-            <em>{{ item.hint }}</em>
+            <p>{{ item.hint }}</p>
           </article>
         </div>
 
-        <div class="editor-actions">
-          <el-button @click="emit('cancel-edit')">取消</el-button>
-          <el-button @click="emit('reset')">重置表单</el-button>
-          <el-button type="primary" :loading="props.saving" @click="emit('save')">保存修改</el-button>
+        <div class="editor-note">
+          <span>Editing Rule</span>
+          <strong>密码留空不会覆盖原值</strong>
+          <p>只会提交发生变化的字段。邮箱、状态、出售、订阅、过期日和材料内容可以一次性回写。</p>
         </div>
-      </div>
+      </section>
+
+      <section class="editor-block">
+        <div class="block-head">
+          <div class="block-index">03</div>
+          <div>
+            <strong>生命周期记录</strong>
+            <p>保留创建、更新时间和库存属性，编辑时也能继续对照上下文。</p>
+          </div>
+        </div>
+
+        <div class="lifecycle-grid">
+          <article v-for="item in props.lifecycleItems" :key="item.label" class="lifecycle-card">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </article>
+        </div>
+      </section>
+
+      <footer class="editor-footer">
+        <el-button @click="emit('cancel-edit')">取消</el-button>
+        <el-button @click="emit('reset')">重置表单</el-button>
+        <el-button type="primary" :loading="props.saving" @click="emit('save')">保存修改</el-button>
+      </footer>
     </template>
 
     <template v-else>
-      <div class="overview-stack">
-        <section class="overview-section">
-          <div class="form-section__header">
-            <span class="form-section__index">01</span>
-            <div>
-              <strong>身份与生命周期</strong>
-              <p>先浏览账号关键信息，再决定是否需要进入编辑态。</p>
+      <section class="overview-deck">
+        <div class="overview-main">
+          <section class="overview-block">
+            <div class="block-head">
+              <div class="block-index">01</div>
+              <div>
+                <strong>基础身份</strong>
+                <p>先确认这个账号是谁、是否还在库存、以及生命周期是否需要介入。</p>
+              </div>
             </div>
-          </div>
 
-          <div class="overview-grid">
-            <article class="overview-field">
-              <span>账号邮箱</span>
-              <strong>{{ toDisplay(props.detail?.email) }}</strong>
-            </article>
-            <article class="overview-field">
-              <span>订阅层级</span>
-              <strong>{{ props.formatSubTier(props.detail?.subTier) }}</strong>
-            </article>
-            <article class="overview-field">
-              <span>账号状态</span>
-              <strong>{{ props.formatAccountStatus(props.detail?.accountStatus) }}</strong>
-            </article>
-            <article class="overview-field">
-              <span>到期日期</span>
-              <strong>{{ props.formatDisplayDate(props.detail?.expireDate, { includeTime: false }) }}</strong>
-            </article>
-            <article class="overview-field">
-              <span>创建时间</span>
-              <strong>{{ props.formatDisplayDate(props.detail?.createdAt) }}</strong>
-            </article>
-            <article class="overview-field">
-              <span>更新时间</span>
-              <strong>{{ props.formatDisplayDate(props.detail?.updatedAt) }}</strong>
-            </article>
-          </div>
-        </section>
-
-        <section class="overview-section">
-          <div class="form-section__header">
-            <span class="form-section__index">02</span>
-            <div>
-              <strong>当前维护姿态</strong>
-              <p>把登录材料、安全材料和会话接管能力收成一眼可读的状态摘要。</p>
+            <div class="overview-grid">
+              <article class="overview-card overview-card--hero">
+                <span>账号邮箱</span>
+                <strong>{{ toDisplay(props.detail?.email) }}</strong>
+                <p>详情页唯一识别项</p>
+              </article>
+              <article class="overview-card">
+                <span>订阅层级</span>
+                <strong>{{ props.formatSubTier(props.detail?.subTier) }}</strong>
+                <p>决定可用能力范围</p>
+              </article>
+              <article class="overview-card">
+                <span>账号状态</span>
+                <strong>{{ props.formatAccountStatus(props.detail?.accountStatus) }}</strong>
+                <p>决定能否继续运营</p>
+              </article>
+              <article class="overview-card">
+                <span>出售状态</span>
+                <strong>{{ props.formatSoldStatus(props.detail?.sold) }}</strong>
+                <p>是否已出库登记</p>
+              </article>
+              <article class="overview-card">
+                <span>到期日期</span>
+                <strong>{{ props.formatDisplayDate(props.detail?.expireDate, { includeTime: false }) }}</strong>
+                <p>用于追踪续期窗口</p>
+              </article>
             </div>
-          </div>
+          </section>
 
-          <div class="posture-grid">
-            <article v-for="item in props.postureItems" :key="item.label" class="posture-card">
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
-              <em>{{ item.hint }}</em>
-            </article>
-          </div>
-        </section>
+          <section class="overview-block">
+            <div class="block-head">
+              <div class="block-index">02</div>
+              <div>
+                <strong>维护姿态</strong>
+                <p>把登录材料、安全材料、会话接管能力和出售登记汇总成一眼能判断的姿态板。</p>
+              </div>
+            </div>
 
-        <section class="overview-note">
-          <span>Read-Only First</span>
-          <strong>编辑被收敛成一次性动作</strong>
-          <p>默认只浏览资料。复制凭据、切换状态仍然在右侧完成，只有修改邮箱、订阅、密码或令牌时才进入编辑。</p>
-        </section>
-      </div>
+            <div class="posture-grid">
+              <article v-for="item in props.postureItems" :key="item.label" class="posture-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+                <p>{{ item.hint }}</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="overview-block">
+            <div class="block-head">
+              <div class="block-index">03</div>
+              <div>
+                <strong>生命周期记录</strong>
+                <p>把创建、更新和库存属性集中放在左侧，避免在运维轨里来回找静态信息。</p>
+              </div>
+            </div>
+
+            <div class="lifecycle-grid">
+              <article v-for="item in props.lifecycleItems" :key="item.label" class="lifecycle-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <aside class="overview-rail">
+          <article class="readiness-card">
+            <span>Read-Only First</span>
+            <strong>先判断，再编辑</strong>
+            <p>复制凭据、更新状态、触发 Session 抓取都在右侧运维轨完成。只有字段本身需要更改时，才进入编辑模式。</p>
+          </article>
+        </aside>
+      </section>
     </template>
   </article>
 </template>
 
 <style scoped>
-.surface-card {
+.editor-shell {
+  display: grid;
+  gap: 20px;
   padding: 24px;
-  border-radius: 22px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.08), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.08);
 }
 
-.editor-panel.is-editing {
-  border-color: rgba(212, 175, 55, 0.18);
+.editor-shell.is-editing {
+  border-color: rgba(20, 184, 166, 0.24);
   box-shadow:
-    0 26px 54px rgba(15, 23, 42, 0.1),
-    0 0 0 1px rgba(212, 175, 55, 0.1);
+    0 28px 60px rgba(15, 23, 42, 0.1),
+    0 0 0 1px rgba(20, 184, 166, 0.08);
 }
 
-.panel-header {
+.editor-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: 18px;
 }
 
-.section-kicker {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 0.72rem;
+.editor-header__copy {
+  display: grid;
+  gap: 8px;
+  max-width: 680px;
+}
+
+.editor-kicker {
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #64748b;
 }
 
-.panel-header h2 {
+.editor-header h2 {
   margin: 0;
   color: #0f172a;
-  font-size: 1.08rem;
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
-.panel-header p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 0.85rem;
-  line-height: 1.6;
+.editor-header p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.92rem;
+  line-height: 1.72;
 }
 
-.panel-toggle-btn {
-  min-width: 108px;
+.mode-toggle-btn {
+  min-width: 116px;
   border-radius: 999px;
   font-weight: 700;
 }
 
-.panel-toggle-btn--accent {
-  --el-button-bg-color: rgba(212, 175, 55, 0.12);
-  --el-button-border-color: rgba(212, 175, 55, 0.24);
-  --el-button-text-color: #171717;
-  --el-button-hover-bg-color: rgba(212, 175, 55, 0.22);
-  --el-button-hover-border-color: rgba(212, 175, 55, 0.36);
-  --el-button-hover-text-color: #171717;
+.mode-toggle-btn--accent {
+  --el-button-bg-color: rgba(15, 118, 110, 0.1);
+  --el-button-border-color: rgba(15, 118, 110, 0.2);
+  --el-button-text-color: #134e4a;
+  --el-button-hover-bg-color: rgba(15, 118, 110, 0.18);
+  --el-button-hover-border-color: rgba(15, 118, 110, 0.3);
+  --el-button-hover-text-color: #0f172a;
 }
 
-.detail-form {
+.editor-form,
+.overview-main {
   display: grid;
   gap: 18px;
 }
 
-.overview-stack {
-  display: grid;
-  gap: 18px;
-}
-
-.form-section {
+.editor-block,
+.overview-block {
   display: grid;
   gap: 16px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
 }
 
-.form-section:first-of-type,
-.overview-section:first-of-type {
-  padding-top: 0;
-  border-top: none;
-}
-
-.overview-section {
-  display: grid;
-  gap: 16px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.form-section__header {
+.block-head {
   display: flex;
   align-items: flex-start;
   gap: 14px;
 }
 
-.form-section__index {
-  width: 38px;
-  height: 38px;
+.block-index {
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(15, 23, 42, 0.06);
   color: #0f172a;
+  font-family: 'Fira Code', 'Space Grotesk', monospace;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
-.form-section__header strong {
+.block-head strong {
   display: block;
   color: #0f172a;
-  font-size: 0.98rem;
+  font-size: 1rem;
 }
 
-.form-section__header p {
+.block-head p {
   margin: 6px 0 0;
   color: #64748b;
-  font-size: 0.82rem;
-  line-height: 1.6;
+  font-size: 0.84rem;
+  line-height: 1.68;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.span-all {
+  grid-column: 1 / -1;
+}
+
+.editor-ops {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+}
+
+.overview-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 18px;
 }
 
 .overview-grid {
@@ -387,154 +492,135 @@ defineExpose({
   gap: 12px;
 }
 
-.overview-field {
+.lifecycle-grid {
   display: grid;
-  gap: 10px;
-  min-height: 108px;
-  padding: 18px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.overview-field span {
+.overview-card,
+.posture-card,
+.lifecycle-card,
+.readiness-card,
+.editor-note {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.overview-card--hero {
+  grid-column: 1 / -1;
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.16), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #f7fffd 100%);
+}
+
+.overview-card span,
+.posture-card span,
+.lifecycle-card span,
+.readiness-card span,
+.editor-note span {
   color: #64748b;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.overview-field strong {
+.overview-card strong,
+.posture-card strong,
+.lifecycle-card strong,
+.readiness-card strong,
+.editor-note strong {
   color: #0f172a;
   font-size: 1rem;
   line-height: 1.5;
   word-break: break-word;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-}
-
-.span-2 {
-  grid-column: 1 / -1;
-}
-
-.editor-footer {
-  display: grid;
-  gap: 18px;
-  margin-top: 22px;
-}
-
-.overview-note {
-  display: grid;
-  gap: 8px;
-  padding: 20px;
-  border-radius: 20px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background:
-    linear-gradient(135deg, rgba(15, 23, 42, 0.03) 0%, rgba(212, 175, 55, 0.08) 100%),
-    #ffffff;
-}
-
-.overview-note span {
-  color: #8a6d1f;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.overview-note strong {
-  color: #0f172a;
-  font-size: 1rem;
-}
-
-.overview-note p {
+.overview-card p,
+.posture-card p,
+.readiness-card p,
+.editor-note p {
   margin: 0;
-  color: #64748b;
-  font-size: 0.84rem;
-  line-height: 1.7;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.68;
 }
 
 .posture-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.posture-card {
+.overview-rail {
   display: grid;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  align-content: start;
+  gap: 14px;
 }
 
-.posture-card span,
-.posture-card em {
-  font-style: normal;
-  color: #64748b;
-  font-size: 0.78rem;
-}
-
-.posture-card strong {
-  color: #0f172a;
-  font-size: 1rem;
-}
-
-.editor-actions {
+.editor-footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
 
-:deep(.detail-form .el-form-item__label) {
+:deep(.editor-form .el-form-item__label) {
   color: #0f172a;
   font-weight: 700;
 }
 
-:deep(.detail-form .el-input__wrapper),
-:deep(.detail-form .el-select__wrapper),
-:deep(.detail-form .el-textarea__inner),
-:deep(.detail-form .el-date-editor.el-input__wrapper) {
+:deep(.editor-form .el-input__wrapper),
+:deep(.editor-form .el-select__wrapper),
+:deep(.editor-form .el-textarea__inner),
+:deep(.editor-form .el-date-editor.el-input__wrapper) {
   background: #ffffff;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12) inset;
 }
 
-:deep(.detail-form .el-input__wrapper:hover),
-:deep(.detail-form .el-select__wrapper:hover),
-:deep(.detail-form .el-textarea__inner:hover),
-:deep(.detail-form .el-date-editor.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.22) inset;
+:deep(.editor-form .el-input__wrapper:hover),
+:deep(.editor-form .el-select__wrapper:hover),
+:deep(.editor-form .el-textarea__inner:hover),
+:deep(.editor-form .el-date-editor.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.22) inset;
 }
 
-:deep(.detail-form .el-input__wrapper.is-focus),
-:deep(.detail-form .el-select__wrapper.is-focused),
-:deep(.detail-form .el-textarea__inner:focus),
-:deep(.detail-form .el-date-editor.el-input__wrapper.is-focus) {
+:deep(.editor-form .el-input__wrapper.is-focus),
+:deep(.editor-form .el-select__wrapper.is-focused),
+:deep(.editor-form .el-textarea__inner:focus),
+:deep(.editor-form .el-date-editor.el-input__wrapper.is-focus) {
   box-shadow:
-    0 0 0 1px rgba(2, 132, 199, 0.34) inset,
-    0 0 0 4px rgba(2, 132, 199, 0.08);
+    0 0 0 1px rgba(20, 184, 166, 0.32) inset,
+    0 0 0 4px rgba(45, 212, 191, 0.12);
 }
 
-@media (max-width: 760px) {
-  .surface-card {
+@media (max-width: 1180px) {
+  .editor-ops,
+  .overview-deck {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .editor-shell {
     padding: 20px;
   }
 
+  .field-grid,
   .overview-grid,
-  .form-grid,
-  .posture-grid {
+  .posture-grid,
+  .lifecycle-grid {
     grid-template-columns: 1fr;
   }
 
-  .panel-header,
-  .editor-actions,
-  .form-section__header {
+  .editor-header,
+  .editor-footer,
+  .block-head {
     flex-direction: column;
     align-items: flex-start;
   }
